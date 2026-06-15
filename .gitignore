@@ -1,0 +1,70 @@
+# =============================================================================
+# Python / ML Project .gitignore
+# =============================================================================
+
+# ---------- Byte-compiled / Optimized / DLL files ----------
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ---------- Distribution / Packaging ----------
+build/
+dist/
+*.egg-info/
+*.egg
+*.whl
+
+# ---------- Virtual environments ----------
+venv/
+env/
+.env/
+.venv/
+
+# ---------- IDE / Editor ----------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+
+# ---------- Jupyter Notebooks ----------
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ---------- Data (large files — download separately) ----------
+data/raw/
+data/processed/
+data/yolo_dataset/
+dataset/
+
+# ---------- Model weights (large binaries) ----------
+models/
+*.pt
+*.pth
+*.onnx
+*.engine
+*.tflite
+
+# ---------- Ultralytics YOLO runs ----------
+runs/
+
+# ---------- Logs ----------
+*.log
+logs/
+wandb/
+mlruns/
+
+# ---------- OS files ----------
+.DS_Store
+Thumbs.db
+
+# ---------- Environment variables ----------
+.env
+.env.local
+
+# ---------- Misc ----------
+*.bak
+*.tmp
+*.cache

@@ -1,0 +1,26 @@
+# =============================================================================
+# YOLOv8 Dataset Configuration — Malaria Parasite Detection (BBBC041)
+# =============================================================================
+# This file tells Ultralytics where to find images/labels and what classes exist.
+# Paths are relative to the project root (where you run training from).
+# Update 'path' below if your directory layout differs.
+
+# Root directory of the YOLO-formatted dataset
+path: data/yolo_dataset
+
+# Relative to 'path' above
+train: images/train
+val: images/val
+test: images/test
+
+# ---- Class definitions ----
+# Index 0–4 maps to label integers in YOLO .txt files.
+# These classes cover the four P. vivax life-cycle stages plus healthy RBCs,
+# matching the BBBC041 annotation categories.
+nc: 5
+names:
+  0: red_blood_cell
+  1: ring
+  2: trophozoite
+  3: schizont
+  4: gametocyte
