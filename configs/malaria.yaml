@@ -13,6 +13,13 @@ train: images/train
 val: images/val
 test: images/test
 
+
+train_labels: labels_5class/train
+val_labels: labels_5class/val
+test_labels: labels_5class/test
+
+
+
 # ---- Class definitions ----
 # Index 0–4 maps to label integers in YOLO .txt files.
 # These classes cover the four P. vivax life-cycle stages plus healthy RBCs,
