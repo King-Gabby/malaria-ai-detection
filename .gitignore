@@ -68,3 +68,4 @@ Thumbs.db
 *.bak
 *.tmp
 *.cache
+!models/best.pt
