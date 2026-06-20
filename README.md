@@ -72,11 +72,13 @@ from the Broad Bioimage Benchmark Collection.
 
 | ID | Class | Description |
 |----|-------|-------------|
-| 0 | `red_blood_cell` | Healthy/uninfected RBC |
-| 1 | `ring` | Early trophozoite (ring form) — most common stage |
-| 2 | `trophozoite` | Mature feeding stage |
-| 3 | `schizont` | Replicative stage with merozoites |
-| 4 | `gametocyte` | Sexual stage (transmissible to mosquitoes) |
+| 0 | `ring` | Early trophozoite (ring form) — most common stage |
+| 1 | `trophozoite` | Mature feeding stage |
+| 2 | `schizont` | Replicative stage with merozoites |
+| 3 | `gametocyte` | Sexual stage (transmissible to mosquitoes) |
+| 4 | `red_blood_cell` | Healthy/uninfected RBC |
+
+
 
 ---
 
@@ -112,7 +114,7 @@ from the Broad Bioimage Benchmark Collection.
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-team/malaria-detection.git
+git clone https://github.com/King-Gabby/malaria-detection.git
 cd malaria-detection
 
 # 2. Create virtual environment
@@ -257,24 +259,29 @@ streamlit run app/streamlit_app.py
 
 ## 📊 Results
 
-> ⏳ **Placeholder** — Update after training is complete.
+> ⏳ **Placeholder** — > ⚠️ Baseline results below are from a 5-epoch test run on the single-class 
+> (ring-only) label set, used to verify the training pipeline. Full 5-class, 
+> 50-epoch results will be updated here once training completes.
 
 | Metric | Value |
 |--------|-------|
-| mAP@0.5 | — |
-| mAP@0.5:0.95 | — |
-| Precision (avg) | — |
-| Recall (avg) | — |
+| mAP@0.5 |  98.9%  |
+| mAP@0.5:0.95 | 81.0 |
+| Precision (avg) |  96.1%  |
+| Recall (avg) | 97.8 |
+
+**Live Demo:** [malaria-ai-detection.streamlit.app](https://malaria-ai-detection.streamlit.app/)
+
 
 ### Per-Class Performance
 
 | Class | AP@0.5 | Precision | Recall |
 |-------|--------|-----------|--------|
-| Red Blood Cell | — | — | — |
 | Ring | — | — | — |
 | Trophozoite | — | — | — |
 | Schizont | — | — | — |
 | Gametocyte | — | — | — |
+| Red Blood Cell | — | — | — |
 
 ---
 
@@ -321,12 +328,11 @@ malaria-detection/
 
 | Name | Role |
 |------|------|
-| [Team Member 1] | Project Lead / Model Training |
-| [Team Member 2] | Data Pipeline / Preprocessing |
-| [Team Member 3] | Streamlit App / Demo |
-| [Team Member 4] | Evaluation / Documentation |
+| Gabriel Akoleaje | Project Lead / Model Training / Data Pipeline / Preprocessing |
+| Treasure Olajide | Streamlit UI / Demo |
+| Sodiq Gbadegesin | Evaluation / Documentation |
 
-**Competition:** University AI-in-Medicine Competition 2026
+**Competition:** NACOS UI × DATICAN 2026
 
 ---
 

@@ -37,7 +37,7 @@ from ultralytics import YOLO
 # ---------------------------------------------------------------------------
 # Class names — must match configs/malaria.yaml
 # ---------------------------------------------------------------------------
-CLASS_NAMES = ["red_blood_cell", "ring", "trophozoite", "schizont", "gametocyte"]
+CLASS_NAMES = ["ring", "trophozoite", "schizont", "gametocyte", "red_blood_cell"]  # CHANGED: Order matches malaria.yaml
 
 # Parasite classes (everything except healthy RBCs)
 PARASITE_CLASSES = {"ring", "trophozoite", "schizont", "gametocyte"}
@@ -50,6 +50,13 @@ CLASS_COLORS = {
     "schizont": (0, 255, 255),          # Yellow
     "gametocyte": (255, 0, 255),        # Magenta — distinctive for rare stage
 }
+
+# CHANGED: Uncertainty classification thresholds for clinical safety
+# Only detections with confidence in [LOW, HIGH] are flagged as "uncertain".
+# Detections below LOW that still pass the user's confidence slider are drawn normally.
+UNCERTAINTY_THRESHOLD_LOW = 0.35    # Lower bound for uncertain tier
+UNCERTAINTY_THRESHOLD_HIGH = 0.55   # Upper bound — above this is "confident"
+UNCERTAIN_COLOR = (0, 255, 255)     # Yellow (BGR) for uncertain detections
 
 
 @dataclass
@@ -218,14 +225,29 @@ class MalariaDetector:
 
         for det in detections:
             x1, y1, x2, y2 = [int(v) for v in det.bbox_xyxy]
-            color = CLASS_COLORS.get(det.class_name, (255, 255, 255))
+
+            # CHANGED: Classify detection into uncertainty tiers for clinical safety.
+            # Gate on BOTH bounds: only 0.35 <= conf <= 0.55 is "uncertain".
+            # Detections below 0.35 that passed the slider are drawn normally.
+            is_uncertain = (
+                UNCERTAINTY_THRESHOLD_LOW <= det.confidence <= UNCERTAINTY_THRESHOLD_HIGH
+            )
+
+            if is_uncertain:
+                # CHANGED: Uncertain tier — yellow box, thicker border, generic label
+                color = UNCERTAIN_COLOR
+                thickness = 3
+                label = f"INCONCLUSIVE {det.confidence:.2f}"
+            else:
+                # Confident tier (>0.55) or sub-threshold (<0.35) — normal class color
+                color = CLASS_COLORS.get(det.class_name, (255, 255, 255))
+                thickness = 2 if det.class_name in PARASITE_CLASSES else 1
+                label = f"{det.class_name} {det.confidence:.2f}"
 
             # Draw box
-            thickness = 2 if det.class_name in PARASITE_CLASSES else 1
             cv2.rectangle(img, (x1, y1), (x2, y2), color, thickness)
 
             # Draw label background + text
-            label = f"{det.class_name} {det.confidence:.2f}"
             (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
             cv2.rectangle(img, (x1, y1 - th - 6), (x1 + tw + 4, y1), color, -1)
             cv2.putText(
