@@ -334,12 +334,12 @@ def main():
         st.sidebar.markdown("### 📊 Model Performance")
         metrics_col1, metrics_col2 = st.sidebar.columns(2)
         with metrics_col1:
-            st.metric("mAP@50", "98.9%", help="In-progress training checkpoint (epoch 35/50, 5-class). Final results updating soon.")  # CHANGED: Updated help text
-            st.metric("Precision", "96.1%", help="In-progress training checkpoint (epoch 35/50, 5-class). Final results updating soon.")  # CHANGED: Updated help text
+            st.metric("mAP@50", "63.1%", help="After complete training (epoch 50/50, 5-class).")  # CHANGED: Updated help text
+            st.metric("Precision", "58.4%", help="After complete training (epoch 50/50, 5-class).")  # CHANGED: Updated help text
         with metrics_col2:
-            st.metric("Recall", "97.8%", help="In-progress training checkpoint (epoch 35/50, 5-class). Final results updating soon.")  # CHANGED: Updated help text
-            st.metric("F1 Score", "96.9%", help="In-progress training checkpoint (epoch 35/50, 5-class). Final results updating soon.")  # CHANGED: Updated help text
-        st.sidebar.caption("In-progress training checkpoint (epoch 35/50, 5-class).")  # CHANGED: Updated caption
+            st.metric("Recall", "67.9%", help="In-progress training checkpoint (epoch 50/50, 5-class).")  # CHANGED: Updated help text
+            st.metric("F1 Score", "62.8%", help="After complete training (epoch 50/50, 5-class).")  # CHANGED: Updated help text
+        st.sidebar.caption("After full training (epoch 50/50, 5-class).")  # CHANGED: Updated caption
 
         st.markdown("---")
         st.markdown("### 📊 About")
@@ -353,7 +353,7 @@ def main():
         )
         st.markdown("---")
         st.caption(
-            "⚠️ For research and educational use only. "
+            "Note: For research and educational use only. "
             "Not a certified medical diagnostic device."
         )
 

@@ -294,10 +294,10 @@ streamlit run app/streamlit_app.py
 
 | Metric | Value (epoch 35/50, 5-class, in progress) |
 |--------|---------------------------------------------|
-| mAP@0.5 | 59.5% |
-| mAP@0.5:0.95 | 50.3% |
-| Precision (avg) | 55.9% |
-| Recall (avg) | 60.8% |
+| mAP@0.5 | 63.1% |
+| mAP@0.5:0.95 | 58.4% |
+| Precision (avg) | 67.9% |
+| Recall (avg) | 68.2% |
 
 **Live Demo:** [malaria-ai-detection.streamlit.app](https://malaria-ai-detection.streamlit.app/)
 
