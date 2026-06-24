@@ -380,6 +380,7 @@ def main():
         if uploaded_file is not None:
             if "sample_image" in st.session_state:
                 del st.session_state["sample_image"]
+            st.session_state["gallery_expanded"] = False  # CHANGED: Reset gallery toggle on new upload
 
         # CHANGED: Added sample images button section
         st.markdown("**Or try a sample image:**")
@@ -923,24 +924,56 @@ def _render_detection_gallery(
     # Sort: uncertain first (most clinically important), then confident descending
     gallery_items.sort(key=lambda x: (not x["is_uncertain"], -x["confidence"]))
 
-    # Display in 4-column grid
-    cols_per_row = 4
-    for i in range(0, len(gallery_items), cols_per_row):
-        cols = st.columns(cols_per_row)
-        for j, col in enumerate(cols):
-            idx = i + j
-            if idx >= len(gallery_items):
-                break
-            item = gallery_items[idx]
-            with col:
-                st.image(item["image"], use_container_width=True)
-                display_name = item["class_name"].replace("_", " ").title()
-                st.markdown(f"**{display_name}**")
-                st.caption(f"Confidence: {item['confidence']:.1%}")
-                if item["is_uncertain"]:
-                    st.caption("⚠️ Needs review")
-                else:
-                    st.caption("✓ High confidence")
+    # CHANGED: Split into initial (first 12) and remaining for Show More toggle
+    max_initial = 12
+    initial_items = gallery_items[:max_initial]
+    remaining_items = gallery_items[max_initial:]
+
+    # --- Helper: render a list of gallery items in a 4-column grid ---
+    def _render_grid(items):
+        cols_per_row = 4
+        for i in range(0, len(items), cols_per_row):
+            cols = st.columns(cols_per_row)
+            for j, col in enumerate(cols):
+                idx = i + j
+                if idx >= len(items):
+                    break
+                item = items[idx]
+                with col:
+                    st.image(item["image"], use_container_width=True)
+                    display_name = item["class_name"].replace("_", " ").title()
+                    st.markdown(f"**{display_name}**")
+                    st.caption(f"Confidence: {item['confidence']:.1%}")
+                    if item["is_uncertain"]:
+                        st.caption("⚠️ Needs review")
+                    else:
+                        st.caption("✓ High confidence")
+
+    # Always render the first 12 (or fewer) items
+    _render_grid(initial_items)
+
+    # CHANGED: Show More / Show Less toggle when gallery exceeds 12 items
+    if remaining_items:
+        total = len(gallery_items)
+        is_expanded = st.session_state.get("gallery_expanded", False)
+
+        if is_expanded:
+            # Render the remaining items
+            _render_grid(remaining_items)
+
+        # Centered toggle button
+        _, btn_col, _ = st.columns([2, 1, 2])
+        with btn_col:
+            if is_expanded:
+                if st.button("🔼 Show less", key="gallery_collapse_btn", use_container_width=True):
+                    st.session_state["gallery_expanded"] = False
+                    st.rerun()
+            else:
+                if st.button(f"🔽 Show all {total} detections", key="gallery_expand_btn", use_container_width=True):
+                    st.session_state["gallery_expanded"] = True
+                    st.rerun()
+
+        st.caption("Top 12 shown by default, sorted by clinical priority")
 
 
 def _draw_filtered(
