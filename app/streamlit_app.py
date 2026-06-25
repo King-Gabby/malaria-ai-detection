@@ -158,7 +158,7 @@ def classify_severity(parasitemia_pct: float) -> str:
     elif parasitemia_pct < 5:
         return "🟠 Moderate parasitemia (1–5%)"
     else:
-        return "🔴 High parasitemia (> 5%) — SEVERE"
+        return "🔴 High parasitemia (> 5%) = SEVERE"
 
 def strip_emoji_for_pdf(text: str) -> str:
     """Remove emoji and non-Latin-1 characters for PDF compatibility.
@@ -341,22 +341,23 @@ def main():
             st.metric("F1 Score", "62.8%", help="After complete training (epoch 50/50, 5-class).")  # CHANGED: Updated help text
         st.sidebar.caption("After full training (epoch 50/50, 5-class).")  # CHANGED: Updated caption
 
-        st.markdown("---")
-        st.markdown("### 📊 About")
-        st.markdown(
-            "This tool detects malaria parasites (*P. vivax*) in blood smear "
-            "microscopy images using a YOLOv8 object detection model trained "
-            "on the BBBC041 dataset."
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### 🧬 About This Tool")
+        st.sidebar.markdown("""
+        | | |
+        |---|---|
+        | **Model** | YOLOv8n |
+        | **Dataset** | BBBC041 |
+        | **Species** | *P. vivax* |
+        | **Classes** | 5 |
+        | **Inference** | ~140ms/img |
+        """)
+        st.sidebar.warning(
+            "⚠️ Research use only. Not a certified "
+            "medical diagnostic device. Always confirm "
+            "with a qualified microscopist."
         )
-        st.markdown(
-            "**Stages detected:** Ring, Trophozoite, Schizont, Gametocyte"
-        )
-        st.markdown("---")
-        st.caption(
-            "Note: For research and educational use only. "
-            "Not a certified medical diagnostic device."
-        )
-
+        
     # --- CHANGED: Analysis mode toggle ---
     mode = st.radio(
         "Analysis Mode",
@@ -397,8 +398,8 @@ def main():
 
         # CHANGED: Added How It Works section
         st.markdown("---")
-        st.markdown("### ⚙️ How It Works")
-        how_col1, how_col2, how_col3 = st.columns(3)
+        with st.expander("⚙️ How It Works", expanded=False):
+            how_col1, how_col2, how_col3 = st.columns(3)
         with how_col1:
             st.markdown("#### 1️⃣ Upload")
             st.markdown("Upload a PNG, JPG, TIFF, or BMP blood smear microscopy image.")
