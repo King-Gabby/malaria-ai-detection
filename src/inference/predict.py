@@ -24,7 +24,6 @@ Usage:
         --conf 0.3
 """
 
-from PIL import GifImagePlugin
 import argparse
 import time  # CHANGED: Added for inference timing
 from dataclasses import dataclass, field
@@ -239,26 +238,26 @@ class MalariaDetector:
             is_uncertain = (
                 UNCERTAINTY_THRESHOLD_LOW <= det.confidence <= UNCERTAINTY_THRESHOLD_HIGH
             )
-        if is_uncertain:
-            color = UNCERTAIN_COLOR
-            thickness = 3
-            label = f"INCONCLUSIVE {det.confidence:.2f}"
-            text_color = (0, 0, 0)  # Black text on yellow background
-        else:
-            color = CLASS_COLORS.get(det.class_name, (255, 255, 255))
-            thickness = 2 if det.class_name in PARASITE_CLASSES else 1
-            label = f"{det.class_name} {det.confidence:.2f}"
-            text_color = (255, 255, 255)  # White text on colored background
+            if is_uncertain:
+                color = UNCERTAIN_COLOR
+                thickness = 3
+                label = f"INCONCLUSIVE {det.confidence:.2f}"
+                text_color = (0, 0, 0)  # Black text on yellow background
+            else:
+                color = CLASS_COLORS.get(det.class_name, (255, 255, 255))
+                thickness = 2 if det.class_name in PARASITE_CLASSES else 1
+                label = f"{det.class_name} {det.confidence:.2f}"
+                text_color = (255, 255, 255)  # White text on colored background
 
-        # Draw box
-        cv2.rectangle(img, (x1, y1), (x2, y2), color, thickness)
-        # Draw label background + text
-        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
-        cv2.rectangle(img, (x1, y1 - th - 6), (x1 + tw + 4, y1), color, -1)
-        cv2.putText(
-            img, label, (x1 + 2, y1 - 4),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.45, text_color, 1, cv2.LINE_AA,
-        )
+            # Draw box
+            cv2.rectangle(img, (x1, y1), (x2, y2), color, thickness)
+            # Draw label background + text
+            (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+            cv2.rectangle(img, (x1, y1 - th - 6), (x1 + tw + 4, y1), color, -1)
+            cv2.putText(
+                img, label, (x1 + 2, y1 - 4),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.45, text_color, 1, cv2.LINE_AA,
+            )
         return img
 
     def predict_batch(
