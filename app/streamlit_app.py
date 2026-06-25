@@ -418,8 +418,8 @@ def main():
                 image_bgr = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
                 image_name = uploaded_file.name
             else:
-                sample_path = st.session_state["sample_image"]
-                image_bgr = cv2.imread(sample_path)
+                sample_path = PROJECT_ROOT / st.session_state["sample_image"]
+                image_bgr = cv2.imread(str(sample_path))
                 image_name = Path(sample_path).name
 
             if image_bgr is None:
@@ -444,6 +444,17 @@ def main():
                     iou=iou_threshold,
                     annotate=True,
                 )
+                if len(result.detections) == 0:
+                    st.warning(
+                        "⚠️ No cells or parasites detected. Please ensure you are "
+                        "uploading a Giemsa-stained blood smear microscopy image."
+                    )
+                elif result.total_rbc + result.total_parasites < 5:
+                    st.warning(
+                        "⚠️ Very few cells detected. Results may be unreliable. "
+                        "For best results, use high-quality microscopy images at "
+                        "100x oil immersion magnification."
+                    ) 
                 # Override image path for display
                 result.image_path = image_name
 
@@ -602,7 +613,7 @@ def main():
                         d.confidence for d in result.detections
                         if d.class_name == cls_name
                     ])
-                    is_parasite = "🦠 Yes" if cls_name in PARASITE_CLASSES else "🔴 No"
+                    is_parasite = " Yes" if cls_name in PARASITE_CLASSES else "-"
                     table_data.append({
                         "Class": cls_name.replace("_", " ").title(),
                         "Count": count,
@@ -1025,10 +1036,10 @@ def load_model(weights_path: str) -> MalariaDetector | None:
     st.cache_resource ensures the model is loaded once and shared
     across all users/sessions, avoiding repeated 200+ MB loads.
     """
-    if not Path(weights_path).exists():
+    resolved_path = PROJECT_ROOT / weights_path
+    if not resolved_path.exists():
         return None
-    return MalariaDetector(weights_path, device="cpu")
-
+    return MalariaDetector(str(resolved_path), device="cpu")
 
 if __name__ == "__main__":
     main()
