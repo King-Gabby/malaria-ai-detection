@@ -55,7 +55,7 @@ CLASS_COLORS = {
 # CHANGED: Uncertainty classification thresholds for clinical safety
 # Only detections with confidence in [LOW, HIGH] are flagged as "uncertain".
 # Detections below LOW that still pass the user's confidence slider are drawn normally.
-UNCERTAINTY_THRESHOLD_LOW = 0.35    # Lower bound for uncertain tier
+UNCERTAINTY_THRESHOLD_LOW = 0.45    # Lower bound for uncertain tier
 UNCERTAINTY_THRESHOLD_HIGH = 0.55   # Upper bound — above this is "confident"
 UNCERTAIN_COLOR = (0, 255, 255)     # Yellow (BGR) for uncertain detections
 

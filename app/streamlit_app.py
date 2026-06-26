@@ -20,6 +20,7 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+
 import cv2
 import numpy as np
 import pandas as pd  # CHANGED: Added for batch summary table
@@ -223,7 +224,7 @@ def generate_pdf_report(
         pdf.cell(40, 7, strip_emoji_for_pdf(str(count)), border=1, align="C", ln=True)
 
     pdf.cell(90, 7, strip_emoji_for_pdf("TOTAL CELLS"), border=1, fill=True)
-    pdf.cell(40, 7, strip_emoji_for_pdf(str(result.total_rbc + result.total_parasites)), border=1, align="C", ln=True)
+    pdf.cell(40, 7, strip_emoji_for_pdf(str(result.total_rbc + result.total_parasites)), border=1, align="C", ln=True, fill=True)
     pdf.ln(6)
 
     # --- Annotated image ---
@@ -437,7 +438,7 @@ def main():
             "Detection Sensitivity",
             min_value=0.05,
             max_value=0.95,
-            value=0.25,
+            value=0.20,
             step=0.05,
             help="Minimum detection confidence. Lower = more detections (more false positives).",
         )
@@ -912,7 +913,7 @@ def main():
                 # CHANGED: Uncertainty flagging expander
                 with st.expander("ℹ️ About Uncertainty Flagging"):
                     st.markdown(
-                        "Detections with confidence between **35%** and **55%** are flagged "
+                        "Detections with confidence between **45%** and **55%** are flagged "
                         "for human review rather than auto-classified. This respects clinical "
                         "safety protocols — when the model is unsure, a trained professional "
                         "should verify the result rather than relying on an automated label."
@@ -1091,7 +1092,7 @@ def main():
                 # CHANGED: Uncertainty flagging expander (shared with batch mode)
                 with st.expander("ℹ️ About Uncertainty Flagging"):
                     st.markdown(
-                        "Detections with confidence between **35%** and **55%** are "
+                        "Detections with confidence between **45%** and **55%** are "
                         "flagged for human review rather than auto-classified. This "
                         "respects clinical safety protocols — when the model is unsure, "
                         "a trained professional should verify the result rather than "
