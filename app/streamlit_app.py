@@ -338,76 +338,329 @@ def main():
         initial_sidebar_state="expanded",
     )
 
-    # --- Custom CSS for a polished look ---
+    # CHANGE — CSS Polish
     st.markdown("""
     <style>
+        /* ============================================================
+           GLOBAL LAYOUT & SPACING
+        ============================================================ */
+        .block-container {
+            padding-top: 2rem !important;
+            padding-bottom: 3rem !important;
+            padding-left: 2.5rem !important;
+            padding-right: 2.5rem !important;
+            max-width: 1200px !important;
+        }
+
+        /* Consistent vertical rhythm between all elements */
+        .element-container {
+            margin-bottom: 0.4rem !important;
+        }
+
+        /* ============================================================
+           TYPOGRAPHY
+        ============================================================ */
+        html, body, [class*="css"] {
+            font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        h1, h2, h3, h4 {
+            letter-spacing: -0.02em;
+            line-height: 1.2;
+        }
+
+        p, li {
+            line-height: 1.65;
+            color: #a8b2d1;
+        }
+
+        /* ============================================================
+           MAIN HEADER
+        ============================================================ */
         .main-header {
             text-align: center;
-            padding: 1.5rem 0;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-            border-radius: 12px;
+            padding: 2.5rem 2rem;
+            background: linear-gradient(135deg, #0d0d1a 0%, #1a1a2e 40%, #0f3460 100%);
+            border-radius: 16px;
             margin-bottom: 2rem;
             color: white;
+            border: 1px solid rgba(100, 255, 218, 0.1);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
         }
+
         .main-header h1 {
             color: #e94560;
-            font-size: 2.2rem;
-            margin-bottom: 0.3rem;
+            font-size: 2.4rem;
+            font-weight: 800;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.03em;
         }
+
         .main-header p {
             color: #a8b2d1;
-            font-size: 1rem;
+            font-size: 1.05rem;
+            margin: 0;
+            font-weight: 400;
         }
+
+        /* ============================================================
+           METRIC CARDS
+        ============================================================ */
         .metric-card {
             background: linear-gradient(135deg, #1a1a2e, #16213e);
             border: 1px solid #233554;
-            border-radius: 10px;
-            padding: 1.2rem;
+            border-radius: 12px;
+            padding: 1.4rem 1.2rem;
             text-align: center;
             color: white;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            height: 100%;
         }
+
+        .metric-card:hover {
+            border-color: rgba(100, 255, 218, 0.3);
+            box-shadow: 0 4px 20px rgba(100, 255, 218, 0.08);
+        }
+
         .metric-value {
-            font-size: 2rem;
+            font-size: 2.2rem;
+            font-weight: 800;
+            color: #64ffda;
+            letter-spacing: -0.02em;
+            line-height: 1;
+        }
+
+        .metric-label {
+            font-size: 0.8rem;
+            color: #8892b0;
+            margin-top: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 500;
+        }
+
+        /* ============================================================
+           SEVERITY BADGE
+        ============================================================ */
+        .severity-badge {
+            padding: 0.6rem 1.2rem;
+            border-radius: 8px;
             font-weight: 700;
+            font-size: 1rem;
+            text-align: center;
+        }
+
+        /* ============================================================
+           BUTTONS
+        ============================================================ */
+        .stButton > button {
+            background: linear-gradient(135deg, #e94560, #c23152) !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 10px !important;
+            padding: 0.7rem 2rem !important;
+            font-weight: 700 !important;
+            font-size: 1rem !important;
+            letter-spacing: 0.01em !important;
+            transition: all 0.25s ease !important;
+            box-shadow: 0 2px 8px rgba(233, 69, 96, 0.3) !important;
+        }
+
+        .stButton > button:hover {
+            transform: translateY(-2px) !important;
+            box-shadow: 0 6px 20px rgba(233, 69, 96, 0.45) !important;
+        }
+
+        .stButton > button:active {
+            transform: translateY(0px) !important;
+            box-shadow: 0 2px 8px rgba(233, 69, 96, 0.3) !important;
+        }
+
+        /* Primary button (Analyse Slide) */
+        .stButton > button[kind="primary"] {
+            background: linear-gradient(135deg, #e94560, #c23152) !important;
+            font-size: 1.05rem !important;
+            padding: 0.8rem 2.5rem !important;
+            border-radius: 12px !important;
+        }
+
+        /* ============================================================
+           SIDEBAR
+        ============================================================ */
+        [data-testid="stSidebar"] {
+            background: linear-gradient(180deg, #0d0d1a 0%, #1a1a2e 100%);
+            border-right: 1px solid #233554;
+        }
+
+        [data-testid="stSidebar"] .block-container {
+            padding-top: 1.5rem !important;
+            padding-left: 1.2rem !important;
+            padding-right: 1.2rem !important;
+        }
+
+        /* Sidebar sliders */
+        [data-testid="stSlider"] > div {
+            padding-top: 0.3rem;
+            padding-bottom: 0.8rem;
+        }
+
+        /* Sidebar metrics */
+        [data-testid="metric-container"] {
+            background: rgba(35, 53, 84, 0.4);
+            border: 1px solid #233554;
+            border-radius: 8px;
+            padding: 0.6rem 0.8rem;
+        }
+
+        /* ============================================================
+           STREAMLIT NATIVE ELEMENTS — DARK THEME POLISH
+        ============================================================ */
+
+        /* File uploader */
+        [data-testid="stFileUploader"] {
+            background: rgba(26, 26, 46, 0.6);
+            border: 2px dashed #233554;
+            border-radius: 12px;
+            padding: 1rem;
+            transition: border-color 0.2s ease;
+        }
+
+        [data-testid="stFileUploader"]:hover {
+            border-color: rgba(100, 255, 218, 0.4);
+        }
+
+        /* Expanders */
+        [data-testid="stExpander"] {
+            background: rgba(26, 26, 46, 0.5);
+            border: 1px solid #233554 !important;
+            border-radius: 10px !important;
+            margin-bottom: 0.8rem;
+        }
+
+        [data-testid="stExpander"] summary {
+            font-weight: 600;
+            color: #a8b2d1;
+            padding: 0.8rem 1rem;
+        }
+
+        /* Info boxes */
+        [data-testid="stInfo"] {
+            background: rgba(100, 255, 218, 0.05);
+            border-left: 3px solid #64ffda;
+            border-radius: 0 8px 8px 0;
+        }
+
+        /* Warning boxes */
+        [data-testid="stWarning"] {
+            background: rgba(255, 215, 0, 0.05);
+            border-left: 3px solid #ffd700;
+            border-radius: 0 8px 8px 0;
+        }
+
+        /* Radio buttons */
+        [data-testid="stRadio"] > div {
+            gap: 1rem;
+        }
+
+        /* Dataframe / tables */
+        [data-testid="stDataFrame"] {
+            border: 1px solid #233554;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        /* Captions */
+        [data-testid="stCaptionContainer"] p {
+            color: #8892b0;
+            font-size: 0.8rem;
+        }
+
+        /* Spinner */
+        [data-testid="stSpinner"] {
             color: #64ffda;
         }
-        .metric-label {
-            font-size: 0.85rem;
-            color: #8892b0;
-            margin-top: 0.3rem;
-        }
-        .severity-badge {
-            padding: 0.5rem 1rem;
-            border-radius: 8px;
-            font-weight: 600;
-            font-size: 1.1rem;
-            text-align: center;
-        }
-        .stButton > button {
-            background: linear-gradient(135deg, #e94560, #c23152);
-            color: white;
+
+        /* ============================================================
+           SECTION DIVIDERS
+        ============================================================ */
+        hr {
             border: none;
-            border-radius: 8px;
-            padding: 0.6rem 2rem;
-            font-weight: 600;
-            transition: all 0.3s ease;
+            border-top: 1px solid #233554;
+            margin: 1.5rem 0;
         }
-        .stButton > button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(233, 69, 96, 0.4);
+
+        /* ============================================================
+           SCROLLBAR
+        ============================================================ */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
         }
+
+        ::-webkit-scrollbar-track {
+            background: #1a1a2e;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #233554;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64ffda;
+        }
+
+        /* ============================================================
+           DETECTION TABLE
+        ============================================================ */
         .detection-table {
             width: 100%;
             border-collapse: collapse;
+            border-radius: 10px;
+            overflow: hidden;
         }
+
         .detection-table th {
             background: #16213e;
             color: #64ffda;
-            padding: 0.6rem;
+            padding: 0.7rem 1rem;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            font-weight: 600;
         }
+
         .detection-table td {
-            padding: 0.5rem;
+            padding: 0.6rem 1rem;
             border-bottom: 1px solid #233554;
+            color: #a8b2d1;
+            font-size: 0.9rem;
+        }
+
+        .detection-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .detection-table tr:hover td {
+            background: rgba(100, 255, 218, 0.03);
+        }
+
+        /* ============================================================
+           FOOTER
+        ============================================================ */
+        footer {
+            visibility: hidden;
+        }
+
+        .footer-credit {
+            text-align: center;
+            color: #4a5568;
+            font-size: 0.78rem;
+            padding: 2rem 0 1rem;
+            border-top: 1px solid #1a1a2e;
+            margin-top: 3rem;
+            letter-spacing: 0.03em;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -564,7 +817,8 @@ def main():
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    # CHANGE 2a — Spacing after value proposition strip
+    st.markdown("<div style='margin-bottom: 1rem;'></div>", unsafe_allow_html=True)
     st.markdown("---")
 
     mode = st.radio(
@@ -572,6 +826,8 @@ def main():
         ["Single Image", "Batch (Multiple Slides)"],
         horizontal=True,
     )
+    # CHANGE 2b — Spacing after mode radio toggle
+    st.markdown("<div style='margin-bottom: 0.5rem;'></div>", unsafe_allow_html=True)
 
     # ===================================================================
     # SINGLE IMAGE MODE
@@ -710,7 +966,8 @@ def main():
                     )
 
                 # Metrics row
-                col1, col2, col3, col4 = st.columns(4)
+                # CHANGE 2c — Metric columns gap
+                col1, col2, col3, col4 = st.columns(4, gap="small")
                 with col1:
                     st.markdown(f"""
                     <div class="metric-card">
@@ -744,7 +1001,8 @@ def main():
                 st.markdown("<br>", unsafe_allow_html=True)
 
                 # Image comparison
-                img_col1, img_col2 = st.columns(2)
+                # CHANGE 2d — Image comparison columns gap
+                img_col1, img_col2 = st.columns(2, gap="medium")
 
                 with img_col1:
                     st.markdown("#### 📷 Original Image")
@@ -870,7 +1128,8 @@ def main():
                 st.markdown("---")
                 st.markdown("### 📥 Download Reports")
 
-                dl_col1, dl_col2, dl_col3 = st.columns(3)
+                # CHANGE 2e — Download buttons columns gap
+                dl_col1, dl_col2, dl_col3 = st.columns(3, gap="small")
 
                 with dl_col1:
                     # PDF Report
@@ -1099,11 +1358,12 @@ def main():
                         "relying on an automated label."
                     )
 
-    # CHANGED: Added team credit to the bottom of the main page
+    # CHANGE 2f — Footer team credit
     st.markdown(
-        "<p style='text-align:center; color: gray; font-size: 0.8em;'>"
-        "Built by Team Devions · NACOS UI × DATICAN Competition 2026"
-        "</p>",
+        "<div class='footer-credit'>"
+        "Built by Team Devions &nbsp;·&nbsp; "
+        "NACOS UI × DATICAN Competition 2026"
+        "</div>",
         unsafe_allow_html=True
     )
 
