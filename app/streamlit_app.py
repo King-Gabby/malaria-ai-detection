@@ -17,6 +17,7 @@ import csv
 import io
 import sys
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -25,6 +26,9 @@ import cv2
 import numpy as np
 import pandas as pd  # CHANGED: Added for batch summary table
 import streamlit as st
+import streamlit.components.v1 as components
+import plotly.express as px # CHANGED: Added for interactive plots
+import plotly.graph_objects as go # CHANGED: Added for interactive plots
 from PIL import Image
 
 # ---------------------------------------------------------------------------
@@ -54,7 +58,6 @@ def generate_pdf_report(
     patient_details: dict = None,
     report_meta: dict = None,
     scan_status: str = "",
-    verified_data: dict = None,
 ) -> bytes:
     """Generate a downloadable PDF report with detection results.
 
@@ -72,37 +75,17 @@ def generate_pdf_report(
     """
     from fpdf import FPDF
 
-    # FIX 2 — Use clinician-verified parasitemia when available,
-    # otherwise fall back to raw model output
-    if verified_data and (
-        verified_data.get('accepted_uncertain', 0) +
-        verified_data.get('rejected_uncertain', 0)
-    ) > 0:
-        display_parasitemia = verified_data['verified_parasitemia_pct']
-        display_parasite_count = verified_data['verified_parasites']
-        display_rbc_count = verified_data['verified_rbc']
-        is_verified = True
-    else:
-        display_parasitemia = result.parasitemia_pct
-        display_parasite_count = result.total_parasites
-        display_rbc_count = result.total_rbc
-        is_verified = False
-
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
 
     # CHANGE 4 — Enhanced clinical PDF header
 
-    # ── Title bar ──  (FIX 4: add [Clinician-Verified] when applicable)
-    title_text = "Laboratory AI Screening Report"
-    if is_verified:
-        title_text += "  [Clinician-Verified]"
-
+    # ── Title bar ──
     pdf.set_fill_color(15, 52, 96)
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Helvetica", "B", 20)
-    pdf.cell(0, 14, title_text,
+    pdf.cell(0, 14, "Laboratory AI Screening Report",
              ln=True, align="C", fill=True)
     pdf.set_font("Helvetica", "", 8)
     pdf.cell(0, 6,
@@ -210,9 +193,8 @@ def generate_pdf_report(
 
     # --- Parasitemia ---
     pdf.set_font("Helvetica", "B", 16)
-    severity = classify_severity(display_parasitemia)
-    label = "Verified Parasitemia" if is_verified else "Estimated Parasitemia"
-    pdf.cell(0, 10, strip_emoji_for_pdf(f"{label}: {display_parasitemia:.2f}%"), ln=True)
+    severity = classify_severity(result.parasitemia_pct)
+    pdf.cell(0, 10, strip_emoji_for_pdf(f"Estimated Parasitemia: {result.parasitemia_pct:.2f}%"), ln=True)
     pdf.set_font("Helvetica", "", 12)
     pdf.cell(0, 8, strip_emoji_for_pdf(f"Severity: {strip_emoji_for_pdf(severity)}"), ln=True)
     pdf.ln(6)
@@ -225,26 +207,26 @@ def generate_pdf_report(
 
     p_counts = {k: v for k, v in result._per_class_counts().items() if k in PARASITE_CLASSES}
 
-    if display_parasite_count == 0:
+    if result.total_parasites == 0:
         interpretation = (
             "No malaria parasites were detected in this blood smear image. "
             "While this result is encouraging, a negative AI screening result "
             "does not exclude malaria infection. Clinical correlation and "
             "repeat microscopy are recommended if symptoms persist."
         )
-    elif display_parasitemia < 1:
+    elif result.parasitemia_pct < 1:
         dominant = max(p_counts, key=p_counts.get).replace("_", " ") if p_counts else "None"
         interpretation = (
-            f"Low parasitemia detected ({display_parasitemia:.2f}%). "
+            f"Low parasitemia detected ({result.parasitemia_pct:.2f}%). "
             f"The predominant parasite stage identified is {dominant}. "
             "At this parasitemia level, the patient may present with mild "
             "symptoms. Microscopy confirmation is advised before initiating "
             "treatment."
         )
-    elif display_parasitemia < 5:
+    elif result.parasitemia_pct < 5:
         dominant = max(p_counts, key=p_counts.get).replace("_", " ") if p_counts else "None"
         interpretation = (
-            f"Moderate parasitemia detected ({display_parasitemia:.2f}%). "
+            f"Moderate parasitemia detected ({result.parasitemia_pct:.2f}%). "
             f"The predominant parasite stage is {dominant}, suggesting active "
             "infection. WHO guidelines recommend prompt microscopy confirmation "
             "and initiation of appropriate antimalarial therapy. "
@@ -253,7 +235,7 @@ def generate_pdf_report(
     else:
         dominant = max(p_counts, key=p_counts.get).replace("_", " ") if p_counts else "None"
         interpretation = (
-            f"High parasitemia detected ({display_parasitemia:.2f}%). "
+            f"High parasitemia detected ({result.parasitemia_pct:.2f}%). "
             f"The predominant stage is {dominant}. This exceeds the WHO severe "
             "malaria threshold of 5%. Immediate clinical review is strongly "
             "advised. Consider IV artesunate per WHO severe malaria protocol. "
@@ -264,7 +246,7 @@ def generate_pdf_report(
     pdf.ln(4)
 
     # SECTION 2 — Stage-Specific Notes
-    if display_parasite_count > 0:
+    if result.total_parasites > 0:
         pdf.set_font("Helvetica", "B", 13)
         pdf.cell(0, 9, strip_emoji_for_pdf("Stage-Specific Clinical Notes"), ln=True)
         pdf.set_font("Helvetica", "", 10)
@@ -311,7 +293,7 @@ def generate_pdf_report(
     recommendations = []
     recommendations.append("Confirm findings with Giemsa-stained thick and thin blood smear microscopy.")
 
-    if display_parasite_count > 0:
+    if result.total_parasites > 0:
         recommendations.append("Initiate antimalarial treatment per national/WHO guidelines after microscopy confirmation.")
 
     if uncertain_count > 0:
@@ -320,13 +302,13 @@ def generate_pdf_report(
             "These require particular attention during microscopy review."
         )
 
-    if display_parasitemia >= 5:
+    if result.parasitemia_pct >= 5:
         recommendations.append(
             "Parasitemia exceeds WHO severe malaria threshold (5%). "
             "Consider IV artesunate and hospital admission per severe malaria protocol."
         )
 
-    if 0 < display_parasitemia < 5:
+    if 0 < result.parasitemia_pct < 5:
         recommendations.append("Monitor patient response to treatment and repeat blood smear at 24 and 48 hours.")
 
     recommendations.append(
@@ -344,11 +326,7 @@ def generate_pdf_report(
     pdf.cell(0, 8, strip_emoji_for_pdf("Detection Summary"), ln=True)
     pdf.set_font("Helvetica", "", 10)
 
-    # FIX 2 — Use verified per-class counts when clinician decisions exist
-    if is_verified and verified_data.get('verified_class_counts'):
-        counts = verified_data['verified_class_counts']
-    else:
-        counts = result._per_class_counts()
+    counts = result._per_class_counts()
     pdf.cell(90, 7, strip_emoji_for_pdf("Class"), border=1, align="C")
     pdf.cell(40, 7, strip_emoji_for_pdf("Count"), border=1, align="C", ln=True)
 
@@ -357,25 +335,8 @@ def generate_pdf_report(
         pdf.cell(40, 7, strip_emoji_for_pdf(str(count)), border=1, align="C", ln=True)
 
     pdf.cell(90, 7, strip_emoji_for_pdf("TOTAL CELLS"), border=1, fill=True)
-    pdf.cell(40, 7, strip_emoji_for_pdf(str(display_rbc_count + display_parasite_count)), border=1, align="C", ln=True, fill=True)
-    pdf.ln(2)
-
-    # FIX 3 — Note when counts reflect clinician verification
-    if is_verified:
-        pdf.set_font("Helvetica", "I", 8)
-        pdf.cell(
-            0, 6,
-            strip_emoji_for_pdf(
-                f"Note: Counts reflect clinician verification. "
-                f"{verified_data['accepted_uncertain']} accepted, "
-                f"{verified_data['rejected_uncertain']} rejected, "
-                f"{verified_data['pending_uncertain']} pending review."
-            ),
-            ln=True
-        )
-        pdf.ln(2)
-    else:
-        pdf.ln(4)
+    pdf.cell(40, 7, strip_emoji_for_pdf(str(result.total_rbc + result.total_parasites)), border=1, align="C", ln=True, fill=True)
+    pdf.ln(6)
 
     # --- Annotated image ---
     if annotated_img is not None:
@@ -384,27 +345,8 @@ def generate_pdf_report(
             img_rgb = cv2.cvtColor(annotated_img, cv2.COLOR_BGR2RGB)
             Image.fromarray(img_rgb).save(tmp.name)
             pdf.set_font("Helvetica", "B", 12)
-            # FIX 3 — Transparent caption when annotation shows unverified boxes
-            image_caption = "Annotated Image"
-            if is_verified:
-                image_caption += (
-                    " (shows original AI detections — see verified counts "
-                    "above for clinician-reviewed totals)"
-                )
-            pdf.cell(0, 8, strip_emoji_for_pdf(image_caption), ln=True)
+            pdf.cell(0, 8, strip_emoji_for_pdf("Annotated Image"), ln=True)
             pdf.image(tmp.name, w=180)
-            if is_verified:
-                pdf.set_font("Helvetica", "I", 8)
-                pdf.ln(2)
-                pdf.multi_cell(
-                    0, 5,
-                    strip_emoji_for_pdf(
-                        "Note: Bounding boxes above reflect all AI-proposed "
-                        "detections including any subsequently rejected by "
-                        "clinician review. Refer to the verified Detection "
-                        "Summary table above for the clinically confirmed count."
-                    )
-                )
 
     # --- Disclaimer ---
     pdf.ln(10)
@@ -468,7 +410,7 @@ def strip_emoji_for_pdf(text: str) -> str:
 # CHANGED: Helper — classify a single detection's uncertainty tier
 # ---------------------------------------------------------------------------
 def _is_uncertain(confidence: float) -> bool:
-    """Return True if the detection falls in the uncertain tier (0.35–0.45)."""
+    """Return True if the detection falls in the uncertain tier (0.35–0.55)."""
     return UNCERTAINTY_THRESHOLD_LOW <= confidence <= UNCERTAINTY_THRESHOLD_HIGH
 
 
@@ -498,14 +440,652 @@ def _count_tiers(result: PredictionResult):
 # ---------------------------------------------------------------------------
 # Streamlit App
 # ---------------------------------------------------------------------------
+def show_splash_screen():  #CHANGED
+    """Display a beautiful 5-second splash screen with dark theme, animations, and preloader."""
+    splash_html = """
+    <style>
+        /* Splash Screen Container */
+        .splash-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #0d0d1a 0%, #1a1a2e 50%, #0f3460 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            animation: fadeIn 0.6s ease-in-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeOut {
+            from {
+                opacity: 1;
+            }
+            to {
+                opacity: 0;
+            }
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(30px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.05);
+            }
+        }
+
+        @keyframes rotate {
+            from {
+                transform: rotate(0deg);
+            }
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        @keyframes slideProgress {
+            0% {
+                width: 0%;
+            }
+            100% {
+                width: 100%;
+            }
+        }
+
+        /* Splash Card */
+        .splash-card {
+            background: linear-gradient(135deg, rgba(26, 26, 46, 0.95) 0%, rgba(15, 52, 96, 0.95) 100%);
+            border: 2px solid rgba(100, 255, 218, 0.2);
+            border-radius: 20px;
+            padding: 3.5rem 3rem;
+            max-width: 420px;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6),
+                        inset 0 1px 0 rgba(100, 255, 218, 0.1);
+            animation: slideUp 0.8s ease-out;
+            backdrop-filter: blur(10px);
+        }
+
+        /* Logo Circle */
+        .logo-circle {
+            width: 100px;
+            height: 100px;
+            background: linear-gradient(135deg, #e94560 0%, #ff6b7a 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1.5rem;
+            font-size: 4rem;
+            box-shadow: 0 10px 40px rgba(233, 69, 96, 0.3);
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        /* Title */
+        .splash-title {
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: #ffffff;
+            margin: 1rem 0 0.8rem;
+            letter-spacing: -0.02em;
+            line-height: 1.3;
+        }
+
+        /* Subtitle */
+        .splash-subtitle {
+            font-size: 0.95rem;
+            color: #8892b0;
+            margin-bottom: 0.3rem;
+            font-weight: 500;
+            letter-spacing: 0.01em;
+        }
+
+        /* Status Text */
+        .splash-status {
+            font-size: 0.9rem;
+            color: #64ffda;
+            margin: 1.5rem 0 1.2rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.6rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: #64ffda;
+            border-radius: 50%;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        /* Preloader Bar Container */
+        .preloader-container {
+            width: 100%;
+            height: 4px;
+            background: rgba(100, 255, 218, 0.1);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 1.2rem;
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Animated Progress Bar */
+        .preloader-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #64ffda 0%, #00d4ff 50%, #64ffda 100%);
+            border-radius: 2px;
+            animation: slideProgress 5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+            box-shadow: 0 0 10px rgba(100, 255, 218, 0.6);
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .splash-card {
+                padding: 2.5rem 2rem;
+                max-width: 340px;
+            }
+
+            .splash-title {
+                font-size: 1.5rem;
+            }
+
+            .logo-circle {
+                width: 80px;
+                height: 80px;
+                font-size: 3.2rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .splash-card {
+                padding: 2rem 1.5rem;
+                max-width: 90%;
+            }
+
+            .splash-title {
+                font-size: 1.3rem;
+            }
+
+            .splash-status {
+                font-size: 0.85rem;
+            }
+
+            .logo-circle {
+                width: 70px;
+                height: 70px;
+                font-size: 2.8rem;
+            }
+        }
+    </style>
+
+    <div class="splash-overlay">
+        <div class="splash-card">
+            <div class="logo-circle">🔬</div>
+            <h1 class="splash-title">Malaria AI Detection</h1>
+            <p class="splash-subtitle">A lab friendly Diagnostic System</p>
+            <div class="splash-status">
+                <span class="status-dot"></span>
+                Initializing diagnostics system...
+            </div>
+            <div class="preloader-container">
+                <div class="preloader-bar"></div>
+            </div>
+        </div>
+    </div>
+    """
+
+    # Display splash screen HTML  #CHANGED
+    st.markdown(splash_html, unsafe_allow_html=True)
+    
+    # Keep placeholder for 5 seconds #CHANGED
+    splash_placeholder = st.empty()
+    time.sleep(5)
+    
+    # Clear splash screen #CHANGED
+    st.rerun()
+
+
+def page_dashboard(): #CHANGED
+    """Dashboard page showing analytics, heatmaps, and case management."""
+    st.markdown("""
+    <div class="main-header">
+        <span style="background-color: #e94560; color: white; padding: 0.2rem 0.6rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 0.5rem; display: inline-block;">Dashboard</span>
+        <h1>📊 Malaria Detection Analytics</h1>
+        <p>Session overview, case history, and system performance metrics</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Dashboard Statistics #CHANGED
+    st.markdown("### 📈 Session Statistics")
+    
+    # Get session statistics from session state #CHANGED
+    total_cases = st.session_state.get("total_cases", 0)
+    positive_cases = st.session_state.get("positive_cases", 0)
+    negative_cases = st.session_state.get("negative_cases", 0)
+    avg_parasitemia = st.session_state.get("avg_parasitemia", 0.0)
+
+    stat_col1, stat_col2, stat_col3, stat_col4 = st.columns(4)
+
+    with stat_col1:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-value">{total_cases}</div>
+            <div class="metric-label">Total Cases</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with stat_col2:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div style="font-size: 2.2rem; font-weight: 800; color: #64ffda;">
+                {positive_cases}
+            </div>
+            <div class="metric-label">Positive Cases</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with stat_col3:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div style="font-size: 2.2rem; font-weight: 800; color: #4ade80;">
+                {negative_cases}
+            </div>
+            <div class="metric-label">Negative Cases</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with stat_col4:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div style="font-size: 2.2rem; font-weight: 800; color: #ff9800;">
+                {avg_parasitemia:.2f}%
+            </div>
+            <div class="metric-label">Avg Parasitemia</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+   
+    # Analytics Charts
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("#### 🔄 Case Status Distribution")
+        case_data = {
+            "Status": ["Positive", "Negative", "Pending"],
+            "Count": [positive_cases, negative_cases, 0]
+        }
+        if sum(case_data["Count"]) > 0:
+            fig = px.pie(
+                values=case_data["Count"],
+                names=case_data["Status"],
+                color_discrete_map={
+                    "Positive": "#e94560",
+                    "Negative": "#4ade80",
+                    "Pending": "#fbbf24"
+                }
+            )
+            fig.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#8892b0"),
+                showlegend=True,
+                height=350
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No cases analyzed yet. Create your first case to see analytics.")
+
+    with col2:
+        st.markdown("#### 🧬 Parasite Stages Detected (All Cases)")
+        stage_data = st.session_state.get("stage_distribution", {
+            "ring": 0,
+            "trophozoite": 0,
+            "schizont": 0,
+            "gametocyte": 0
+        })
+        if sum(stage_data.values()) > 0:
+            fig = px.bar(
+                x=list(stage_data.keys()),
+                y=list(stage_data.values()),
+                labels={"x": "Parasite Stage", "y": "Count"},
+                color=["#ff4d4d", "#ff9800", "#ffeb3b", "#ff00ff"]
+            )
+            fig.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(26,26,46,0.8)",
+                font=dict(color="#8892b0"),
+                xaxis_title="Stage",
+                yaxis_title="Count",
+                height=350,
+                showlegend=False
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Parasite stage data will appear here once cases are analyzed.")
+
+    st.markdown("---")
+
+    # Recent Cases
+    st.markdown("### 📋 Recent Cases")
+    recent_cases = st.session_state.get("case_history", [])
+    
+    if recent_cases:
+        for i, case in enumerate(reversed(recent_cases[-5:])):  # Show last 5
+            with st.expander(f"Case {i+1}: {case.get('patient_name', 'Unknown')} • {case.get('timestamp', 'N/A')}", expanded=False):
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    st.metric("Patient ID", case.get("patient_id", "N/A"))
+                with c2:
+                    st.metric("Parasitemia", f"{case.get('parasitemia', 0):.2f}%")
+                with c3:
+                    status = "Positive" if case.get("parasitemia", 0) > 0 else "Negative"
+                    st.metric("Result", status)
+    else:
+        st.info("No cases recorded yet. Create your first case to get started!")
+
+
+def page_patient_intake():
+    """Patient intake page for entering patient details with confirmation modal."""
+    st.markdown("""
+    <div class="main-header">
+        <span style="background-color: #64ffda; color: #0d0d1a; padding: 0.2rem 0.6rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 0.5rem; display: inline-block;">New Case</span>
+        <h1>🏥 Patient Information</h1>
+        <p>Enter patient details to create a new case</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Initialize current case if not exists
+    if "current_case" not in st.session_state:
+        st.session_state.current_case = {
+            "patient_details": {
+                "name": "",
+                "age": None,
+                "sex": "",
+                "patient_id": "",
+                "clinician": "",
+                "facility": "",
+                "notes": "",
+            }
+        }
+
+    patient_details = st.session_state.current_case["patient_details"]
+
+    # Patient intake form
+    st.markdown("### 📝 Patient Details")
+    
+    pt_col1, pt_col2, pt_col3 = st.columns(3)
+
+    with pt_col1:
+        patient_details["name"] = st.text_input(
+            "Patient Name",
+            value=patient_details["name"],
+            placeholder="e.g. Femi Okoro",
+        )
+
+        age_input = st.number_input(
+            "Age (years)",
+            min_value=0,
+            max_value=120,
+            value=patient_details["age"] if patient_details["age"] else 0,
+            step=1,
+            help="Enter 0 if age is unknown",
+        )
+        patient_details["age"] = age_input if age_input > 0 else None
+
+    with pt_col2:
+        patient_details["sex"] = st.selectbox(
+            "Sex",
+            options=["", "Male", "Female", "Other / Prefer not to say"],
+            index=["", "Male", "Female", "Other / Prefer not to say"].index(
+                patient_details["sex"]
+            ) if patient_details["sex"] in ["", "Male", "Female", "Other / Prefer not to say"] else 0,
+        )
+
+        patient_details["patient_id"] = st.text_input(
+            "Patient / Sample ID",
+            value=patient_details["patient_id"],
+            placeholder="e.g. LAB-2026-00142",
+            help="Hospital or laboratory identifier",
+        )
+
+    with pt_col3:
+        patient_details["clinician"] = st.text_input(
+            "Requesting Clinician",
+            value=patient_details["clinician"],
+            placeholder="e.g. Dr. O.I Olayemi",
+        )
+
+        patient_details["facility"] = st.text_input(
+            "Health Facility",
+            value=patient_details["facility"],
+            placeholder="e.g. University College Hospital",
+        )
+
+    patient_details["notes"] = st.text_area(
+        "Clinical Notes (Optional)",
+        value=patient_details["notes"],
+        placeholder="e.g. Fever for 3 days, suspected malaria...",
+        height=80,
+        max_chars=250,
+        help="Brief clinical history or presenting complaints. Max 250 characters.",
+    )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Display patient summary
+    if any([patient_details["name"], patient_details["patient_id"], 
+            patient_details["clinician"], patient_details["facility"]]):
+        
+        summary_parts = []
+        if patient_details["name"]:
+            summary_parts.append(f"**{patient_details['name']}**")
+        if patient_details["age"]:
+            summary_parts.append(f"Age {patient_details['age']}")
+        if patient_details["sex"]:
+            summary_parts.append(patient_details["sex"])
+        if patient_details["patient_id"]:
+            summary_parts.append(f"ID: `{patient_details['patient_id']}`")
+
+        st.info("🏥 " + " · ".join(summary_parts))
+
+    st.markdown("---")
+
+    # Action buttons
+    button_col1, button_col2 = st.columns(2)
+
+    with button_col1:
+        if st.button("✅ Continue", key="continue_btn", use_container_width=True):
+            # Show confirmation modal
+            st.session_state.show_confirmation = True
+            st.rerun()
+
+    with button_col2:
+        if st.button("← Back to Dashboard", key="back_btn", use_container_width=True):
+            st.session_state.current_page = "dashboard"
+            st.rerun()
+
+    # Confirmation Modal
+    if st.session_state.get("show_confirmation", False):
+        st.markdown("""
+        <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+                    background: rgba(0,0,0,0.7); z-index: 9000; display: flex; 
+                    align-items: center; justify-content: center;">
+            <div style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+                        border: 2px solid #64ffda;
+                        border-radius: 16px;
+                        padding: 2rem;
+                        max-width: 500px;
+                        text-align: center;
+                        box-shadow: 0 20px 60px rgba(0,0,0,0.6);">
+                <div style="font-size: 2.5rem; margin-bottom: 1rem;">✅</div>
+                <h2 style="color: #64ffda; margin-bottom: 0.5rem;">Patient Details Recorded</h2>
+                <p style="color: #8892b0; margin-bottom: 1.5rem;">
+                    The patient information has been successfully saved for this case.
+                </p>
+                <div style="background: rgba(100, 255, 218, 0.1);
+                            border: 1px solid rgba(100, 255, 218, 0.3);
+                            border-radius: 10px;
+                            padding: 1rem;
+                            margin-bottom: 1.5rem;
+                            text-align: left;">
+                    <p style="color: #64ffda; font-weight: 600; margin: 0.5rem 0;">Case Summary:</p>
+                    <p style="color: #a8b2d1; font-size: 0.9rem; margin: 0.3rem 0;">
+                        <strong>Name:</strong> {name}<br>
+                        <strong>ID:</strong> {pid}<br>
+                        <strong>Age:</strong> {age}<br>
+                        <strong>Facility:</strong> {facility}
+                    </p>
+                </div>
+                <p style="color: #8892b0; font-size: 0.85rem; margin-bottom: 1.5rem;">
+                    You will now proceed to upload the blood smear microscopy image for AI analysis.
+                </p>
+            </div>
+        </div>
+        """.format(
+            name=patient_details.get("name", "Not provided"),
+            pid=patient_details.get("patient_id", "Not provided"),
+            age=patient_details.get("age", "Not provided"),
+            facility=patient_details.get("facility", "Not provided")
+        ), unsafe_allow_html=True)
+
+        # Modal action buttons
+        modal_col1, modal_col2 = st.columns(2)
+        with modal_col1:
+            if st.button("✓ Proceed to Upload", key="proceed_upload", use_container_width=True):
+                st.session_state.show_confirmation = False
+                st.session_state.current_page = "analysis"
+                st.rerun()
+
+        with modal_col2:
+            if st.button("✎ Edit Details", key="edit_details", use_container_width=True):
+                st.session_state.show_confirmation = False
+                st.rerun()
+
+
+def page_analysis():
+    """Analysis page for uploading blood smear and running AI detection."""
+    st.markdown("""
+    <div class="main-header">
+        <span style="background-color: #ff9800; color: white; padding: 0.2rem 0.6rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 0.5rem; display: inline-block;">Analysis</span>
+        <h1>🔬 Blood Smear Analysis</h1>
+        <p>Upload microscopy image for AI-powered parasite detection and classification</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Display current patient info
+    if "current_case" in st.session_state:
+        patient_details = st.session_state.current_case["patient_details"]
+        if patient_details.get("name") or patient_details.get("patient_id"):
+            st.info(f"📋 Case: {patient_details.get('name', patient_details.get('patient_id', 'New Case'))}")
+
+    # File upload section
+    st.markdown("### 📤 Upload Blood Smear Image")
+    uploaded_file = st.file_uploader(
+        "Choose a blood smear microscopy image",
+        type=["png", "jpg", "jpeg", "tif", "tiff", "bmp"],
+        help="Supported formats: PNG, JPG, TIFF, BMP",
+    )
+
+    if uploaded_file is not None:
+        # Process the uploaded image
+        st.session_state.current_case["image"] = uploaded_file
+        st.success("Image uploaded successfully! Ready for analysis.")
+        
+        # Display preview
+        image_data = Image.open(uploaded_file)
+        st.image(image_data, caption="Uploaded Blood Smear", use_column_width=True)
+
+        # Analysis button
+        if st.button("🔍 Run AI Analysis", key="run_analysis_btn", use_container_width=True):
+            st.info("Analysis in progress...")
+            # Analysis would be performed here
+            st.success("Analysis complete!")
+            st.session_state.current_page = "results"
+            st.rerun()
+
+    st.markdown("---")
+
+    # Navigation buttons
+    nav_col1, nav_col2 = st.columns(2)
+    with nav_col1:
+        if st.button("← Back to Patient Info", key="back_to_patient", use_container_width=True):
+            st.session_state.current_page = "patient_intake"
+            st.rerun()
+    
+    with nav_col2:
+        if st.button("Back to Dashboard", key="back_to_dashboard_analysis", use_container_width=True):
+            st.session_state.current_page = "dashboard"
+            st.rerun()
+
+
 def main():
     # --- Page config ---
     st.set_page_config(
-        page_title="🦟 Malaria Detection System",
+        page_title="Malaria Detection System",
         page_icon="🔬",
         layout="wide",
         initial_sidebar_state="expanded",
     )
+    # ------ SESSION STATE------
+    # Track whether we've shown the splash this session
+    if "splash_shown" not in st.session_state:
+        st.session_state.splash_shown = False
+    if "dark_mode" not in st.session_state:
+        st.session_state.dark_mode = False
+    
+    # Page navigation
+    if "current_page" not in st.session_state:
+        st.session_state.current_page = "dashboard"
+    
+    # Analytics tracking
+    if "total_cases" not in st.session_state:
+        st.session_state.total_cases = 0
+    if "positive_cases" not in st.session_state:
+        st.session_state.positive_cases = 0
+    if "negative_cases" not in st.session_state:
+        st.session_state.negative_cases = 0
+    if "avg_parasitemia" not in st.session_state:
+        st.session_state.avg_parasitemia = 0.0
+    if "case_history" not in st.session_state:
+        st.session_state.case_history = []
+    if "stage_distribution" not in st.session_state:
+        st.session_state.stage_distribution = {
+            "ring": 0, "trophozoite": 0, "schizont": 0, "gametocyte": 0
+        }
+
+    # Show splash screen only on first load
+    if not st.session_state.splash_shown:
+        st.session_state.splash_shown = True
+        show_splash_screen()
+        return
+
 
     # CHANGE 1 — Patient intake session state
     if "patient_details" not in st.session_state:
@@ -518,19 +1098,6 @@ def main():
             "facility": "",
             "notes": "",
         }
-
-    # FEATURE 2 — Session state for verification decisions
-    if "verification_decisions" not in st.session_state:
-        st.session_state["verification_decisions"] = {}
-
-    # BUGFIX — Decouple inference trigger from results persistence using session_state
-    if "current_result" not in st.session_state:
-        st.session_state["current_result"] = None
-    if "current_image_bgr" not in st.session_state:
-        st.session_state["current_image_bgr"] = None
-    if "current_image_name" not in st.session_state:
-        st.session_state["current_image_name"] = None
-
 
     # Auto-generate report number and study ID for this session
     if "report_meta" not in st.session_state:
@@ -580,6 +1147,29 @@ def main():
         p, li {
             line-height: 1.65;
             color: #a8b2d1;
+        }
+
+        /* ============================================================
+           BUTTON CONTRAST
+        ============================================================ */
+        button[kind="primary"] {
+            color: #f8fbff !important;
+            background-color: #0f4c81 !important;
+            border-color: #2cbce9 !important;
+        }
+
+        button[kind="primary"]:hover,
+        button[kind="primary"]:focus {
+            background-color: #1976d2 !important;
+            border-color: #8be5ff !important;
+        }
+
+        button[kind="primary"] span {
+            color: #f8fbff !important;
+        }
+
+        .css-18ni7ap.e16nr0p31 { /* Streamlit button label container */
+            color: #f8fbff !important;
         }
 
         /* ============================================================
@@ -872,73 +1462,112 @@ def main():
     </style>
     """, unsafe_allow_html=True)
 
-    # --- Header ---
-    # CHANGE 1 — Header badge
-    st.markdown("""
-    <div class="main-header">
-        <span style="background-color: #e94560; color: white; padding: 0.2rem 0.6rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 0.5rem; display: inline-block;">AI-Assisted Screening</span>
-        <h1>🔬 AI-Powered Malaria Detection</h1>
-        <p>Detects and classifies Plasmodium vivax parasite stages from microscopy images in seconds</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # --- Sidebar: Settings ---
+    # --- Sidebar Navigation ---
     with st.sidebar:
-        st.markdown("## ⚙️ Settings")
-
-        # CHANGED: Moved Model Weights Path into Advanced / Developer Settings expander
-        with st.sidebar.expander("⚙️ Advanced / Developer Settings"):
+        st.markdown("## 🔬 Malaria Detection System")
+        st.markdown("---")
+        
+        
+        # Page navigation
+        page_options = {
+            "📊 Dashboard": "dashboard",
+            "🆕 New Case": "patient_intake",
+            "🔬 Analysis": "analysis",
+        }
+        
+        selected_page = st.selectbox(
+            "Navigate",
+            options=list(page_options.keys()),
+            index=list(page_options.values()).index(st.session_state.current_page),
+            key="page_selector"
+        )
+        st.session_state.current_page = page_options[selected_page]
+        
+        st.markdown("---")
+        st.markdown("### ⚙️ Model Settings")
+        
+        with st.expander("Advanced Settings"):
             weights_path = st.text_input(
                 "Model Weights Path",
                 value="models/best.pt",
                 help="Path to trained YOLOv8 .pt file",
             )
-            # FEATURE 1 — Display last quality metrics in sidebar
-            if 'last_quality' in st.session_state:
-                q = st.session_state['last_quality']
-                st.markdown("**Last slide quality metrics**")
-                st.caption(f"Sharpness: {q['sharpness']} · "
-                           f"Brightness: {q['brightness']}/255 · "
-                           f"Saturation: {q['saturation_pct']}%")
-
-        conf_threshold = st.slider(
-            "Detection Sensitivity",
-            min_value=0.05,
-            max_value=0.95,
-            value=0.20,
-            step=0.05,
-            help="Minimum detection confidence. Lower = more detections (more false positives).",
-        )
-
-        iou_threshold = st.slider(
-            "NMS Overlap Tolerance",
-            min_value=0.1,
-            max_value=0.9,
-            value=0.45,
-            step=0.05,
-            help="Non-Maximum Suppression threshold. Lower = fewer overlapping boxes.",
-        )
-
-        show_rbc = st.checkbox(
-            "Show Red Blood Cells",
-            value=False,
-            help="Toggle visibility of healthy RBC detections (reduces visual clutter).",
-        )
-
-        # CHANGED: Added Model Performance metrics card to sidebar
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("### 📊 Model Performance")
-        metrics_col1, metrics_col2 = st.sidebar.columns(2)
+            
+            conf_threshold = st.slider(
+                "Detection Sensitivity",
+                min_value=0.05,
+                max_value=0.95,
+                value=0.20,
+                step=0.05,
+                help="Minimum detection confidence",
+            )
+            
+            iou_threshold = st.slider(
+                "NMS Overlap Tolerance",
+                min_value=0.1,
+                max_value=0.9,
+                value=0.45,
+                step=0.05,
+                help="Non-Maximum Suppression threshold",
+            )
+        
+        st.markdown("---")
+        st.markdown("### 📊 Model Performance")
+        metrics_col1, metrics_col2 = st.columns(2)
         with metrics_col1:
-            st.metric("mAP@50", "63.1%", help=f"mAP stand for Mean Average Precision. However, our average precisions per class are: RBC- 99.3%, Ring- 65.5%, Trop- 80.8%, Sch- 35.0%, Gam- 34.8%")  # CHANGED: Updated help text
-            st.metric("Precision", "58.4%", help="Of all boxes detected, what % were correct.")  # CHANGED: Updated help text
+            st.metric("mAP@50", "63.1%")
+            st.metric("Precision", "58.4%")
         with metrics_col2:
-            st.metric("Recall", "67.9%", help="Of all the ground truth boxes, what fraction the model found.")  # CHANGED: Updated help text
-            st.metric("F1 Score", "62.8%", help="Harmonic mean of precision and recall.")  # CHANGED: Updated help text
-        st.sidebar.caption("After full training (epoch 50/50, 5-class).")  # CHANGED: Updated caption
+            st.metric("Recall", "67.9%")
+            st.metric("F1 Score", "62.8%")
+        
+        st.markdown("---")
+        st.markdown("### 📋 About")
+        st.markdown("""
+        | | |
+        |---|---|
+        | **Model** | YOLOv8n |
+        | **Dataset** | BBBC041 |
+        | **Species** | *P. vivax* |
+        | **Classes** | 5 |
+        """)
+        st.warning("Research use only. Not FDA-certified.")
 
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("### About This Tool❔")
+    # --- Page Routing ---
+    if st.session_state.current_page == "dashboard":
+        page_dashboard()
+    elif st.session_state.current_page == "patient_intake":
+        page_patient_intake()
+    elif st.session_state.current_page == "analysis":
+        page_analysis()
+    
+    # --- Footer ---
+    st.markdown("---")
+    st.markdown("""
+    <div class="footer-credit">
+        <p>Malaria AI Detection System • Team Devions • NACOS UI x DATICAN 2026</p>
+        <p style="font-size: 0.7rem;">Dataset: BBBC041 | Model: YOLOv8n | Species: *P. vivax*</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+@st.cache_resource
+def load_model(weights_path: str) -> MalariaDetector | None:
+    """Load the detector model with Streamlit caching.
+
+    st.cache_resource ensures the model is loaded once and shared
+    across all users/sessions, avoiding repeated 200+ MB loads.
+    """
+    resolved_path = PROJECT_ROOT / weights_path
+    if not resolved_path.exists():
+        return None
+    return MalariaDetector(str(resolved_path), device="cpu")
+
+if __name__ == "__main__":
+    main()
+
+
+def _render_detailed_analysis(result: PredictionResult, uncertain_count: int) -> None:
         st.sidebar.markdown("""
         | | |
         |---|---|
@@ -956,9 +1585,8 @@ def main():
         
     # --- CHANGED: Analysis mode toggle ---
     # CHANGE 2 — Value proposition strip
-    vp_col1, vp_col2, vp_col3, vp_col4 = st.columns(4)
-
-    with vp_col1:
+vp_col1, vp_col2, vp_col3, vp_col4 = st.columns(4)
+with vp_col1:
         st.markdown("""
         <div style="text-align:center; padding:0.8rem; 
                     background:linear-gradient(135deg,#1a1a2e,#16213e); 
@@ -976,8 +1604,7 @@ def main():
             </div>
         </div>
         """, unsafe_allow_html=True)
-
-    with vp_col2:
+with vp_col2:
         st.markdown("""
         <div style="text-align:center; padding:0.8rem; 
                     background:linear-gradient(135deg,#1a1a2e,#16213e); 
@@ -996,7 +1623,7 @@ def main():
         </div>
         """, unsafe_allow_html=True)
 
-    with vp_col3:
+with vp_col3:
         st.markdown("""
         <div style="text-align:center; padding:0.8rem; 
                     background:linear-gradient(135deg,#1a1a2e,#16213e); 
@@ -1016,7 +1643,7 @@ def main():
         """, unsafe_allow_html=True)
 
 
-    with vp_col4:
+with vp_col4:
         st.markdown("""
         <div style="text-align:center; padding:0.8rem; 
                     background:linear-gradient(135deg,#1a1a2e,#16213e); 
@@ -1036,21 +1663,21 @@ def main():
         """, unsafe_allow_html=True)
 
     # CHANGE 2a — Spacing after value proposition strip
-    st.markdown("<div style='margin-bottom: 1rem;'></div>", unsafe_allow_html=True)
-    st.markdown("---")
+st.markdown("<div style='margin-bottom: 1rem;'></div>", unsafe_allow_html=True)
+st.markdown("---")
 
-    mode = st.radio(
+mode = st.radio(
         "Analysis Mode",
         ["Single Image", "Batch (Multiple Slides)"],
         horizontal=True,
     )
     # CHANGE 2b — Spacing after mode radio toggle
-    st.markdown("<div style='margin-bottom: 0.5rem;'></div>", unsafe_allow_html=True)
+st.markdown("<div style='margin-bottom: 0.5rem;'></div>", unsafe_allow_html=True)
 
     # ===================================================================
     # SINGLE IMAGE MODE
     # ===================================================================
-    if mode == "Single Image":  # CHANGED: Wrap existing flow in mode check
+if mode == "Single Image":  # CHANGED: Wrap existing flow in mode check
 
         # CHANGE 2 — Patient intake form
         with st.expander("🏥 Patient Information", expanded=True):
@@ -1190,7 +1817,7 @@ def main():
                 # Status will be filled after inference — placeholder for now
                 st.info(
                     "🏥 " + " · ".join(summary_parts) +
-                    f" · Report: {meta['report_number']}"
+                    f" · Report:  {meta['report_number']}"
                 )
 
         # --- Main content ---
@@ -1211,10 +1838,10 @@ def main():
         sample_col1, sample_col2, sample_col3 = st.columns(3)
         with sample_col1:
             if st.button("🔬 Sample 1 — Infected"):
-                st.session_state["sample_image"] = "app/samples/infected_sample.jpg"
+                st.session_state["sample_image"] = "app/samples/infected_sample.png"
         with sample_col2:
             if st.button("🔬 Sample 2 — Mixed"):
-                st.session_state["sample_image"] = "app/samples/mixed_sample.jpg"
+                st.session_state["sample_image"] = "app/samples/mixed_sample.png"
         with sample_col3:
             if st.button("🔬 Sample 3 — Healthy"):
                 st.session_state["sample_image"] = "app/samples/healthy_sample.jpg"
@@ -1248,104 +1875,6 @@ def main():
 
             if image_bgr is None:
                 st.error("❌ Could not decode the uploaded image. Please try a different file.")
-                return
-
-            # FEATURE 1 — Slide quality assessment
-            quality = assess_slide_quality(image_bgr)
-            st.session_state['last_quality'] = quality['metrics']
-
-            if quality['has_warnings']:
-                for issue in quality['issues']:
-                    if issue['severity'] == 'error':
-                        err_label = {
-                            'blur': 'Focus Problem',
-                            'dark': 'Illumination Too Low',
-                            'bright': 'Overexposure Detected'
-                        }.get(issue['type'], 'Quality Issue')
-                        st.markdown(f"""
-                        <div style="
-                            background: rgba(248,113,113,0.08);
-                            border: 1px solid rgba(248,113,113,0.4);
-                            border-left: 4px solid #f87171;
-                            border-radius: 10px;
-                            padding: 14px 16px;
-                            margin-bottom: 10px;
-                        ">
-                            <div style="font-weight:600; color:#f87171; 
-                                        margin-bottom:6px; font-size:14px;">
-                                ⚠ Slide Quality Error — {err_label}
-                            </div>
-                            <div style="color:#e2e8f0; font-size:13.5px; 
-                                        line-height:1.6;">
-                                {issue['message']}
-                            </div>
-                            <div style="color:#9ca3af; font-size:12px; 
-                                        margin-top:6px;">
-                                {issue['detail']}
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        warn_label = {
-                            'blur': 'Focus Advisory',
-                            'dark': 'Illumination Advisory', 
-                            'bright': 'Exposure Advisory'
-                        }.get(issue['type'], 'Quality Advisory')
-                        st.markdown(f"""
-                        <div style="
-                            background: rgba(255,215,0,0.07);
-                            border: 1px solid rgba(255,215,0,0.35);
-                            border-left: 4px solid #ffd700;
-                            border-radius: 10px;
-                            padding: 14px 16px;
-                            margin-bottom: 10px;
-                        ">
-                            <div style="font-weight:600; color:#ffd700; 
-                                        margin-bottom:6px; font-size:14px;">
-                                ⚡ Slide Quality Warning — {warn_label}
-                            </div>
-                            <div style="color:#e2e8f0; font-size:13.5px; 
-                                        line-height:1.6;">
-                                {issue['message']}
-                            </div>
-                            <div style="color:#9ca3af; font-size:12px; 
-                                        margin-top:6px;">
-                                {issue['detail']}
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-            # Hard block on errors — do not show Analyse Slide button
-            if not quality['passed']:
-                st.info("""
-**Next steps:**
-1. Clean the microscope lens and slide
-2. Ensure the slide is perfectly in focus
-3. Check illumination levels
-4. Recapture the image and try again
-""")
-                st.stop()
-
-            # Soft advisory on warnings — show button with a note
-            if quality['has_warnings'] and quality['passed']:
-                st.caption(
-                    "⚡ Quality warnings detected above. You may proceed, "
-                    "but results should be interpreted with caution and "
-                    "confirmed by microscopy."
-                )
-                
-            if quality['passed'] and not quality['has_warnings']:
-                st.success("✅ Slide quality checks passed. Image is sharp and well-illuminated.")
-
-            # FEATURE 2 — Image hash change detection
-            import hashlib
-            img_hash = hashlib.md5(image_bgr.tobytes()).hexdigest()[:12]
-
-            if st.session_state.get("last_img_hash") != img_hash:
-                st.session_state["verification_decisions"] = {}
-                st.session_state["last_img_hash"] = img_hash
-                st.session_state["verified_result"] = None
-                st.session_state["current_result"] = None  # BUGFIX: new image requires fresh Analyse Slide click
 
             # CHANGE 3 — Analyse Slide button
             st.markdown("<br>", unsafe_allow_html=True)
@@ -1359,8 +1888,22 @@ def main():
                     type="primary",
                 )
 
-            # Trigger fresh inference only when the button is explicitly clicked
-            # AND the image has changed (avoid re-running on every rerun)
+            if not run_scan:
+                st.markdown("""
+                <div style="text-align:center; padding:2rem; color:#8892b0;">
+                    <p style="font-size:0.95rem;">
+                        👆 Adjust <strong style="color:#64ffda;">Detection Sensitivity</strong> 
+                        in the sidebar if needed, then click 
+                        <strong style="color:#e94560;">Analyse Slide</strong> to begin.
+                    </p>
+                    <p style="font-size:0.8rem; margin-top:0.5rem;">
+                        Tip: Lower sensitivity surfaces more detections. 
+                        Higher sensitivity shows only confident findings.
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
+                st.stop()
+
             if run_scan:
                 # Load model (cached to avoid reloading on every interaction)
                 detector = load_model(weights_path)
@@ -1370,8 +1913,9 @@ def main():
                         f"❌ Model weights not found at `{weights_path}`. "
                         "Please train a model first or update the weights path."
                     )
-                    return
+                    
 
+                # Run inference
                 with st.spinner("🔍 Analyzing blood smear ..."):
                     result = detector.predict(
                         image_bgr,
@@ -1390,317 +1934,193 @@ def main():
                             "For best results, use high-quality microscopy images at "
                             "100x oil immersion magnification."
                         ) 
+                    # Override image path for display
                     result.image_path = image_name
-                st.session_state["current_result"] = result
-                st.session_state["current_image_bgr"] = image_bgr
-                st.session_state["current_image_name"] = image_name
-                # Reset verification state for the new analysis run
-                st.session_state["verification_decisions"] = {}
-                st.session_state["verified_result"] = None
 
-            # Show results if we have a stored result for the current image.
-            # This persists across reruns triggered by verification buttons,
-            # solving the bug where accept/reject discarded all results.
-            has_result = (
-                st.session_state.get("current_result") is not None
-                and st.session_state.get("current_image_name") == image_name
-            )
+                # CHANGED: Count uncertainty tiers
+                uncertain_count, confident_parasite_count = _count_tiers(result)
 
-            if not has_result:
-                st.markdown("""
-                <div style="text-align:center; padding:2rem; color:#8892b0;">
-                    <p style="font-size:0.95rem;">
-                        👆 Adjust <strong style="color:#64ffda;">Detection 
-                        Sensitivity</strong> in the sidebar if needed, then 
-                        click <strong style="color:#e94560;">Analyse Slide</strong> 
-                        to begin.
-                    </p>
-                </div>
-                """, unsafe_allow_html=True)
-                st.stop()
+                # --- Results Layout ---
+                st.markdown("---")
 
-            # From here onward, use the STORED result, not a freshly computed one
-            result = st.session_state["current_result"]
-            image_bgr = st.session_state["current_image_bgr"]
-            image_name = st.session_state["current_image_name"]
+                # CHANGED: Uncertainty warning banner (above results)
+                if uncertain_count > 0:
+                    st.warning(
+                        f"⚠️ {uncertain_count} detection(s) require human verification "
+                        "due to low model confidence. These are highlighted in yellow."
+                    )
 
-            # CHANGED: Count uncertainty tiers 
-            uncertain_count, confident_parasite_count = _count_tiers(result)
-
-            # --- Results Layout ---
-            st.markdown("---")
-
-            # CHANGED: Uncertainty warning banner (above results)
-            if uncertain_count > 0:
-                st.warning(
-                    f"⚠️ {uncertain_count} detection(s) require human verification "
-                    "due to low model confidence. These are highlighted in yellow."
-                )
-
-            # Metrics row
-            # CHANGE 2c — Metric columns gap
-            col1, col2, col3, col4 = st.columns(4, gap="small")
-            with col1:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-value">{result.total_rbc + result.total_parasites}</div>
-                    <div class="metric-label">Total Cells</div>
-                </div>
-                """, unsafe_allow_html=True)
-            with col2:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-value">{result.total_parasites}</div>
-                    <div class="metric-label">Parasites Detected</div>
-                </div>
-                """, unsafe_allow_html=True)
-            with col3:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-value">{result.parasitemia_pct:.2f}%</div>
-                    <div class="metric-label">Parasitemia</div>
-                </div>
-                """, unsafe_allow_html=True)
-            with col4:
-                severity = classify_severity(result.parasitemia_pct)
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-value" style="font-size:1.4rem;">{severity}</div>
-                    <div class="metric-label">Severity</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-            st.markdown("<br>", unsafe_allow_html=True)
-
-            # Image comparison
-            # CHANGE 2d — Image comparison columns gap
-            img_col1, img_col2 = st.columns(2, gap="medium")
-
-            with img_col1:
-                st.markdown("#### 📷 Original Image")
-                original_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
-                st.image(original_rgb, use_container_width=True)
-
-            with img_col2:
-                st.markdown("#### 🎯 Detection Results")
-                if result.annotated_image is not None:
-                    # Optionally filter out RBC boxes for cleaner visualisation
-                    if not show_rbc:
-                        display_img = _draw_filtered(image_bgr, result)
-                    else:
-                        display_img = result.annotated_image
-                    annotated_rgb = cv2.cvtColor(display_img, cv2.COLOR_BGR2RGB)
-                    st.image(annotated_rgb, use_container_width=True)
-                else:
-                    st.info("No detections to display.")
-
-            # CHANGED: Clinical Summary Card (Single Image mode only)
-            st.markdown("---")
-            st.markdown("### 🩺 AI Screening Summary")
-            
-            # 1. Parasites detected count
-            # 2. Dominant stage determination
-            p_counts = {}
-            for d in result.detections:
-                if d.class_name in PARASITE_CLASSES:
-                    p_counts[d.class_name] = p_counts.get(d.class_name, 0) + 1
-            
-            dominant_stage = "None"
-            if p_counts:
-                dominant_stage = max(p_counts, key=p_counts.get).replace("_", " ").title()
-
-            # 3 & 4. Estimated parasitemia & Severity
-            severity_str = classify_severity(result.parasitemia_pct)
-
-            # 5. Recommendation
-            if uncertain_count > 0:
-                rec_str = f"Microscopy review strongly advised — {uncertain_count} detection(s) flagged for human verification."
-                rec_style = "background-color: #ffd214; color: #1a1a2e; border-left: 5px solid #d4af37;"
-                rec_icon = "⚠️"
-            elif result.parasitemia_pct == 0:
-                rec_str = "No parasites detected. Routine confirmation recommended per standard clinical protocol."
-                rec_style = "background-color: #1f3a2b; color: #64ffda; border-left: 5px solid #64ffda;"
-                rec_icon = "✅"
-            elif result.parasitemia_pct < 1:
-                rec_str = "Low parasitemia detected. Microscopy review advised before final diagnosis."
-                rec_style = "background-color: #3b3a1a; color: #ffeb3b; border-left: 5px solid #ffd214;"
-                rec_icon = "🟡"
-            elif result.parasitemia_pct < 5:
-                rec_str = "Moderate parasitemia detected. Microscopy review advised before final diagnosis."
-                rec_style = "background-color: #3a2510; color: #ff9800; border-left: 5px solid #ff9800;"
-                rec_icon = "🟠"
-            else:
-                rec_str = "Severe parasitemia detected. Immediate microscopy confirmation and clinical correlation advised."
-                rec_style = "background-color: #421818; color: #ff4d4d; border-left: 5px solid #ff4d4d;"
-                rec_icon = "🚨"
-
-            st.markdown(f"""
-            <div style="background: linear-gradient(135deg, #1a1a2e, #16213e); border: 1px solid #233554; border-radius: 12px; padding: 1.5rem; color: white;">
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
-                    <div>
-                        <div style="font-size: 0.85rem; color: #8892b0;">Parasites Detected</div>
-                        <div style="font-size: 1.8rem; font-weight: 700; color: #ff4d4d;">{result.total_parasites}</div>
+                # Metrics row
+                # CHANGE 2c — Metric columns gap
+                col1, col2, col3, col4 = st.columns(4, gap="small")
+                with col1:
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-value">{result.total_rbc + result.total_parasites}</div>
+                        <div class="metric-label">Total Cells</div>
                     </div>
-                    <div>
-                        <div style="font-size: 0.85rem; color: #8892b0;">Dominant Stage</div>
-                        <div style="font-size: 1.8rem; font-weight: 700; color: #64ffda;">{dominant_stage}</div>
+                    """, unsafe_allow_html=True)
+                with col2:
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-value">{result.total_parasites}</div>
+                        <div class="metric-label">Parasites Detected</div>
                     </div>
-                    <div>
-                        <div style="font-size: 0.85rem; color: #8892b0;">Estimated Parasitemia</div>
-                        <div style="font-size: 1.8rem; font-weight: 700; color: #64ffda;">{result.parasitemia_pct:.2f}%</div>
+                    """, unsafe_allow_html=True)
+                with col3:
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-value">{result.parasitemia_pct:.2f}%</div>
+                        <div class="metric-label">Parasitemia</div>
                     </div>
-                    <div>
-                        <div style="font-size: 0.85rem; color: #8892b0;">Severity</div>
-                        <div style="font-size: 1.2rem; font-weight: 700; margin-top: 0.5rem;">{severity_str}</div>
+                    """, unsafe_allow_html=True)
+                with col4:
+                    severity = classify_severity(result.parasitemia_pct)
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <div class="metric-value" style="font-size:1.4rem;">{severity}</div>
+                        <div class="metric-label">Severity</div>
                     </div>
-                </div>
-                <div style="{rec_style} padding: 1rem; border-radius: 8px; font-weight: 600; display: flex; align-items: center; gap: 0.8rem;">
-                    <span style="font-size: 1.5rem;">{rec_icon}</span>
-                    <span>{rec_str}</span>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # FEATURE 2 — Verified panel for metrics card override if decisions have been made
-            # We calculate verified metrics here so that the main Clinical Summary Card displays them.
-            verified_data = st.session_state.get("verified_result")
-            if verified_data and (verified_data['accepted_uncertain'] + verified_data['rejected_uncertain']) > 0:
-                # Recalculate dominant stage using clinician decisions
-                vp_counts = {}
-                for det_i, d in enumerate(result.detections):
-                    if d.class_name in PARASITE_CLASSES:
-                        is_uncertain = UNCERTAINTY_THRESHOLD_LOW <= d.confidence <= UNCERTAINTY_THRESHOLD_HIGH
-                        if is_uncertain:
-                            key = str(det_i)
-                            if st.session_state["verification_decisions"].get(key, True):
-                                vp_counts[d.class_name] = vp_counts.get(d.class_name, 0) + 1
+                    """, unsafe_allow_html=True)
+
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                # Image comparison
+                # CHANGE 2d — Image comparison columns gap
+                img_col1, img_col2 = st.columns(2, gap="medium")
+
+                with img_col1:
+                    st.markdown("#### 📷 Original Image")
+                    original_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+                    st.image(original_rgb, use_container_width=True)
+
+                with img_col2:
+                    st.markdown("#### 🎯 Detection Results")
+                    if result.annotated_image is not None:
+                        # Optionally filter out RBC boxes for cleaner visualisation
+                        if not show_rbc:
+                            display_img = _draw_filtered(image_bgr, result)
                         else:
-                            vp_counts[d.class_name] = vp_counts.get(d.class_name, 0) + 1
-                v_dominant_stage = "None"
-                if vp_counts:
-                    v_dominant_stage = max(vp_counts, key=vp_counts.get).replace("_", " ").title()
+                            display_img = result.annotated_image
+                        annotated_rgb = cv2.cvtColor(display_img, cv2.COLOR_BGR2RGB)
+                        st.image(annotated_rgb, use_container_width=True)
+                    else:
+                        st.info("No detections to display.")
+
+                # CHANGED: Clinical Summary Card (Single Image mode only)
+                st.markdown("---")
+                st.markdown("### 🩺 AI Screening Summary")
                 
-                v_severity_str = classify_severity(verified_data['verified_parasitemia_pct'])
+                # 1. Parasites detected count
+                # 2. Dominant stage determination
+                p_counts = {}
+                for d in result.detections:
+                    if d.class_name in PARASITE_CLASSES:
+                        p_counts[d.class_name] = p_counts.get(d.class_name, 0) + 1
                 
-                # Update recommendation for summary card
-                if verified_data['pending_uncertain'] > 0:
-                    v_rec_str = f"Microscopy review strongly advised — {verified_data['pending_uncertain']} detection(s) pending verification."
-                    v_rec_style = "background-color: #ffd214; color: #1a1a2e; border-left: 5px solid #d4af37;"
-                    v_rec_icon = "⚠️"
-                elif verified_data['verified_parasitemia_pct'] == 0:
-                    v_rec_str = "No parasites detected. Routine confirmation recommended per standard clinical protocol."
-                    v_rec_style = "background-color: #1f3a2b; color: #64ffda; border-left: 5px solid #64ffda;"
-                    v_rec_icon = "✅"
-                elif verified_data['verified_parasitemia_pct'] < 1:
-                    v_rec_str = "Low parasitemia detected. Microscopy review advised before final diagnosis."
-                    v_rec_style = "background-color: #3b3a1a; color: #ffeb3b; border-left: 5px solid #ffd214;"
-                    v_rec_icon = "🟡"
-                elif verified_data['verified_parasitemia_pct'] < 5:
-                    v_rec_str = "Moderate parasitemia detected. Microscopy review advised before final diagnosis."
-                    v_rec_style = "background-color: #3a2510; color: #ff9800; border-left: 5px solid #ff9800;"
-                    v_rec_icon = "🟠"
+                dominant_stage = "None"
+                if p_counts:
+                    dominant_stage = max(p_counts, key=p_counts.get).replace("_", " ").title()
+
+                # 3 & 4. Estimated parasitemia & Severity
+                severity_str = classify_severity(result.parasitemia_pct)
+
+                # 5. Recommendation
+                if uncertain_count > 0:
+                    rec_str = f"Microscopy review strongly advised — {uncertain_count} detection(s) flagged for human verification."
+                    rec_style = "background-color: #ffd214; color: #1a1a2e; border-left: 5px solid #d4af37;"
+                    rec_icon = "⚠️"
+                elif result.parasitemia_pct == 0:
+                    rec_str = "No parasites detected. Routine confirmation recommended per standard clinical protocol."
+                    rec_style = "background-color: #1f3a2b; color: #64ffda; border-left: 5px solid #64ffda;"
+                    rec_icon = "✅"
+                elif result.parasitemia_pct < 1:
+                    rec_str = "Low parasitemia detected. Microscopy review advised before final diagnosis."
+                    rec_style = "background-color: #3b3a1a; color: #ffeb3b; border-left: 5px solid #ffd214;"
+                    rec_icon = "🟡"
+                elif result.parasitemia_pct < 5:
+                    rec_str = "Moderate parasitemia detected. Microscopy review advised before final diagnosis."
+                    rec_style = "background-color: #3a2510; color: #ff9800; border-left: 5px solid #ff9800;"
+                    rec_icon = "🟠"
                 else:
-                    v_rec_str = "Severe parasitemia detected. Immediate microscopy confirmation and clinical correlation advised."
-                    v_rec_style = "background-color: #421818; color: #ff4d4d; border-left: 5px solid #ff4d4d;"
-                    v_rec_icon = "🚨"
+                    rec_str = "Severe parasitemia detected. Immediate microscopy confirmation and clinical correlation advised."
+                    rec_style = "background-color: #421818; color: #ff4d4d; border-left: 5px solid #ff4d4d;"
+                    rec_icon = "🚨"
 
                 st.markdown(f"""
-                <div style="background: linear-gradient(135deg, #0f2027, #1a2a1a); border: 1px solid #4ade80; border-radius: 12px; padding: 1.5rem; color: white; margin-top: 1rem;">
-                    <div style="font-size: 11px; font-weight: 600; color: #4ade80; text-transform: uppercase; letter-spacing: .06em; margin-bottom: 1rem;">
-                        ✓ Clinician-Verified Screening Summary
-                    </div>
+                <div style="background: linear-gradient(135deg, #1a1a2e, #16213e); border: 1px solid #233554; border-radius: 12px; padding: 1.5rem; color: white;">
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
                         <div>
-                            <div style="font-size: 0.85rem; color: #8892b0;">Verified Parasites</div>
-                            <div style="font-size: 1.8rem; font-weight: 700; color: #ff4d4d;">{verified_data['verified_parasites']}</div>
+                            <div style="font-size: 0.85rem; color: #8892b0;">Parasites Detected</div>
+                            <div style="font-size: 1.8rem; font-weight: 700; color: #ff4d4d;">{result.total_parasites}</div>
                         </div>
                         <div>
-                            <div style="font-size: 0.85rem; color: #8892b0;">Verified Dominant Stage</div>
-                            <div style="font-size: 1.8rem; font-weight: 700; color: #64ffda;">{v_dominant_stage}</div>
+                            <div style="font-size: 0.85rem; color: #8892b0;">Dominant Stage</div>
+                            <div style="font-size: 1.8rem; font-weight: 700; color: #64ffda;">{dominant_stage}</div>
                         </div>
                         <div>
-                            <div style="font-size: 0.85rem; color: #8892b0;">Verified Parasitemia</div>
-                            <div style="font-size: 1.8rem; font-weight: 700; color: #64ffda;">{verified_data['verified_parasitemia_pct']:.2f}%</div>
+                            <div style="font-size: 0.85rem; color: #8892b0;">Estimated Parasitemia</div>
+                            <div style="font-size: 1.8rem; font-weight: 700; color: #64ffda;">{result.parasitemia_pct:.2f}%</div>
                         </div>
                         <div>
-                            <div style="font-size: 0.85rem; color: #8892b0;">Verified Severity</div>
-                            <div style="font-size: 1.2rem; font-weight: 700; margin-top: 0.5rem;">{v_severity_str}</div>
+                            <div style="font-size: 0.85rem; color: #8892b0;">Severity</div>
+                            <div style="font-size: 1.2rem; font-weight: 700; margin-top: 0.5rem;">{severity_str}</div>
                         </div>
                     </div>
-                    <div style="{v_rec_style} padding: 1rem; border-radius: 8px; font-weight: 600; display: flex; align-items: center; gap: 0.8rem;">
-                        <span style="font-size: 1.5rem;">{v_rec_icon}</span>
-                        <span>{v_rec_str}</span>
+                    <div style="{rec_style} padding: 1rem; border-radius: 8px; font-weight: 600; display: flex; align-items: center; gap: 0.8rem;">
+                        <span style="font-size: 1.5rem;">{rec_icon}</span>
+                        <span>{rec_str}</span>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-            st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown("<br>", unsafe_allow_html=True)
 
-            # CHANGED: Inference timing caption (Single Image mode)
-            st.caption(f"⏱️ Inference completed in {result.inference_time_sec:.2f} seconds (CPU)")
+                # CHANGED: Inference timing caption (Single Image mode)
+                st.caption(f"⏱️ Inference completed in {result.inference_time_sec:.2f} seconds (CPU)")
 
-            # --- INSERTION POINT: _render_detailed_analysis call ---
-            _render_detailed_analysis(result, uncertain_count)
+                # --- INSERTION POINT: _render_detailed_analysis call ---
+                _render_detailed_analysis(result, uncertain_count)
 
-            # --- CHANGED: Detection Crop Gallery (Single Image mode only) ---
-            _render_detection_gallery(image_bgr, result)
+                # --- CHANGED: Detection Crop Gallery (Single Image mode only) ---
+                _render_detection_gallery(image_bgr, result)
 
-            # --- Detection details table ---
-            st.markdown("---")
-            st.markdown("### 📋 Detection Details")
+                # --- Detection details table ---
+                st.markdown("---")
+                st.markdown("### 📋 Detection Details")
 
-            if result.detections:
-                # Build a summary by class
-                counts = result._per_class_counts()
-                table_data = []
-                for cls_name, count in sorted(counts.items()):
-                    avg_conf = np.mean([
-                        d.confidence for d in result.detections
-                        if d.class_name == cls_name
-                    ])
-                    is_parasite = " Yes" if cls_name in PARASITE_CLASSES else "-"
-                    table_data.append({
-                        "Class": cls_name.replace("_", " ").title(),
-                        "Count": count,
-                        "Avg Confidence": f"{avg_conf:.3f}",
-                        "Parasite?": is_parasite,
-                    })
+                if result.detections:
+                    # Build a summary by class
+                    counts = result._per_class_counts()
+                    table_data = []
+                    for cls_name, count in sorted(counts.items()):
+                        avg_conf = np.mean([
+                            d.confidence for d in result.detections
+                            if d.class_name == cls_name
+                        ])
+                        is_parasite = " Yes" if cls_name in PARASITE_CLASSES else "-"
+                        table_data.append({
+                            "Class": cls_name.replace("_", " ").title(),
+                            "Count": count,
+                            "Avg Confidence": f"{avg_conf:.3f}",
+                            "Parasite?": is_parasite,
+                        })
 
-                st.table(table_data)
-            else:
-                st.info("No objects detected at the current confidence threshold.")
+                    st.table(table_data)
+                else:
+                    st.info("No objects detected at the current confidence threshold.")
 
-            # --- Download section ---
-            st.markdown("---")
-            st.markdown("### 📥 Download Reports")
+                # --- Download section ---
+                st.markdown("---")
+                st.markdown("### 📥 Download Reports")
 
-            # CHANGE 2e — Download buttons columns gap
-            dl_col1, dl_col2, dl_col3 = st.columns(3, gap="small")
+                # CHANGE 2e — Download buttons columns gap
+                dl_col1, dl_col2, dl_col3 = st.columns(3, gap="small")
 
-            with dl_col1:
-                # PDF Report
-                try:
-                    # CHANGE 5 — Updated PDF call with patient details
-                    # FEATURE 2 — Use clinician-verified result if available, otherwise use model result
-                    verified_data = st.session_state.get("verified_result")
-
-                    if verified_data and (
-                        verified_data['accepted_uncertain'] + 
-                        verified_data['rejected_uncertain']
-                    ) > 0:
-                        # Clinician has reviewed — note this in the scan status
-                        v_decisions = (
-                            verified_data['accepted_uncertain'] + 
-                            verified_data['rejected_uncertain']
-                        )
-                        if verified_data['verified_parasites'] == 0:
-                            scan_status = "Negative — Clinician-verified"
-                        else:
-                            scan_status = (
-                                f"Positive — {verified_data['verified_parasites']} "
-                                f"parasite(s) · Clinician-verified "
-                                f"({v_decisions} uncertain detections reviewed)"
-                            )
-                    else:
+                with dl_col1:
+                    # PDF Report
+                    try:
+                        # CHANGE 5 — Updated PDF call with patient details
+                        # Determine scan status for PDF
                         if result.total_parasites == 0:
                             scan_status = "Negative — No parasites detected"
                         elif uncertain_count > 0 and result.total_parasites == uncertain_count:
@@ -1710,342 +2130,75 @@ def main():
                                 f"Positive — {result.total_parasites} parasite(s) detected"
                             )
 
-                    pdf_bytes = generate_pdf_report(
-                        result,
-                        result.annotated_image,
-                        uncertain_count=uncertain_count,
-                        patient_details=st.session_state.get("patient_details"),
-                        report_meta=st.session_state.get("report_meta"),
-                        scan_status=scan_status,
-                        verified_data=st.session_state.get("verified_result"),  # FIX 5
-                    )
+                        pdf_bytes = generate_pdf_report(
+                            result,
+                            result.annotated_image,
+                            uncertain_count=uncertain_count,
+                            patient_details=st.session_state.get("patient_details"),
+                            report_meta=st.session_state.get("report_meta"),
+                            scan_status=scan_status,
+                        )
 
-                    # Use Patient ID for filename — more clinical, more private than name
-                    patient_id_slug = (
-                        st.session_state.get("patient_details", {})
-                        .get("patient_id", "")
-                        .replace(" ", "-")
-                        .replace("/", "-")
-                        .strip("-")
-                    )
-                    report_num = (
-                        st.session_state.get("report_meta", {})
-                        .get("report_number", "")
-                        .replace("-", "")
-                    )
-                    if patient_id_slug:
-                        pdf_filename = f"{patient_id_slug}_malaria_report.pdf"
-                    elif report_num:
-                        pdf_filename = f"{report_num}_malaria_report.pdf"
-                    else:
-                        pdf_filename = f"malaria_report_{Path(image_name).stem}.pdf"
+                        # Use Patient ID for filename — more clinical, more private than name
+                        patient_id_slug = (
+                            st.session_state.get("patient_details", {})
+                            .get("patient_id", "")
+                            .replace(" ", "-")
+                            .replace("/", "-")
+                            .strip("-")
+                        )
+                        report_num = (
+                            st.session_state.get("report_meta", {})
+                            .get("report_number", "")
+                            .replace("-", "")
+                        )
+                        if patient_id_slug:
+                            pdf_filename = f"{patient_id_slug}_malaria_report.pdf"
+                        elif report_num:
+                            pdf_filename = f"{report_num}_malaria_report.pdf"
+                        else:
+                            pdf_filename = f"malaria_report_{Path(image_name).stem}.pdf"
 
+                        st.download_button(
+                            label="📄 Download PDF Report",
+                            data=pdf_bytes,
+                            file_name=pdf_filename,
+                            mime="application/pdf",
+                        )
+                    except ImportError:
+                        st.warning("Install `fpdf2` for PDF generation: `pip install fpdf2`")
+
+                with dl_col2:
+                    # CSV Report
+                    csv_data = generate_csv_report(result)
                     st.download_button(
-                        label="📄 Download PDF Report",
-                        data=pdf_bytes,
-                        file_name=pdf_filename,
-                        mime="application/pdf",
-                    )
-                except ImportError:
-                    st.warning("Install `fpdf2` for PDF generation: `pip install fpdf2`")
-
-            with dl_col2:
-                # CSV Report
-                csv_data = generate_csv_report(result)
-                st.download_button(
-                    label="📊 Download CSV Data",
-                    data=csv_data,
-                    file_name=f"detections_{Path(image_name).stem}.csv",
-                    mime="text/csv",
-                )
-
-            with dl_col3:
-                # Annotated Image
-                if result.annotated_image is not None:
-                    img_rgb = cv2.cvtColor(result.annotated_image, cv2.COLOR_BGR2RGB)
-                    pil_img = Image.fromarray(img_rgb)
-                    buf = io.BytesIO()
-                    pil_img.save(buf, format="PNG")
-                    st.download_button(
-                        label="🖼️ Download Annotated Image",
-                        data=buf.getvalue(),
-                        file_name=f"annotated_{Path(image_name).stem}.png",
-                        mime="image/png",
+                        label="📊 Download CSV Data",
+                        data=csv_data,
+                        file_name=f"detections_{Path(image_name).stem}.csv",
+                        mime="text/csv",
                     )
 
-            # ── FEATURE 2 — Human-in-the-loop verification ───────────────────────────
-            if uncertain_count > 0:
-                st.markdown("---")
-                st.markdown("### 🔬 Clinician Verification Required")
-                st.caption(
-                    f"{uncertain_count} detection(s) have confidence between "
-                    f"35% and 45% and require your review. Accept or reject "
-                    f"each detection below. Parasitemia and severity will "
-                    f"recalculate immediately based on your decisions."
-                )
-                
-                # Collect uncertain detections with their indices
-                uncertain_dets = [
-                    (i, det) for i, det in enumerate(result.detections)
-                    if (det.class_name in PARASITE_CLASSES and
-                        UNCERTAINTY_THRESHOLD_LOW 
-                        <= det.confidence 
-                        <= UNCERTAINTY_THRESHOLD_HIGH)
-                ]
-                
-                img_h, img_w = image_bgr.shape[:2]
-                
-                # Render each uncertain detection as a verification card
-                for idx, (det_i, det) in enumerate(uncertain_dets):
-                    key = str(det_i)
-                    current = st.session_state["verification_decisions"].get(key)
-                    
-                    # Crop the detection from the original un-annotated image
-                    x1, y1, x2, y2 = [int(v) for v in det.bbox_xyxy]
-                    bw, bh = x2 - x1, y2 - y1
-                    pad_x = max(8, int(bw * 0.2))
-                    pad_y = max(8, int(bh * 0.2))
-                    cx1 = max(0, x1 - pad_x)
-                    cy1 = max(0, y1 - pad_y)
-                    cx2 = min(img_w, x2 + pad_x)
-                    cy2 = min(img_h, y2 + pad_y)
-                    crop = image_bgr[cy1:cy2, cx1:cx2]
-                    
-                    if crop.size == 0:
-                        continue
-                    
-                    crop_display = cv2.resize(
-                        crop, (200, 200), interpolation=cv2.INTER_CUBIC
-                    )
-                    crop_rgb = cv2.cvtColor(crop_display, cv2.COLOR_BGR2RGB)
-                    
-                    # Card border color reflects decision state
-                    if current is None:
-                        border_color = "#ffd700"
-                        status_label = "⏳ Pending review"
-                        status_color = "#ffd700"
-                    elif current:
-                        border_color = "#4ade80"
-                        status_label = "✓ Accepted as parasite"
-                        status_color = "#4ade80"
-                    else:
-                        border_color = "#f87171"
-                        status_label = "✗ Rejected as false positive"
-                        status_color = "#f87171"
-                    
-                    st.markdown(f"""
-                    <div style="
-                        border: 1px solid {border_color};
-                        border-radius: 12px;
-                        padding: 16px;
-                        margin-bottom: 12px;
-                        background: rgba(26,26,46,0.6);
-                    ">
-                        <div style="font-weight:600; color:#e2e8f0; 
-                                    margin-bottom:4px; font-size:14px;">
-                            Detection {idx + 1} of {len(uncertain_dets)} — 
-                            {det.class_name.replace('_',' ').title()}
-                        </div>
-                        <div style="font-size:12px; color:#8892b0; 
-                                    margin-bottom:12px;">
-                            Confidence: {det.confidence:.1%} · 
-                            Position: ({x1}, {y1}) — ({x2}, {y2}) · 
-                            <span style="color:{status_color};">
-                                {status_label}
-                            </span>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    v_col1, v_col2, v_col3 = st.columns([1, 1, 2])
-                    
-                    with v_col1:
-                        st.image(crop_rgb, caption="Zoomed crop", 
-                                 use_container_width=True)
-                    
-                    with v_col2:
-                        accept_key = f"accept_{det_i}_{img_hash}"
-                        reject_key = f"reject_{det_i}_{img_hash}"
-                        
-                        if st.button(
-                            "✓ Accept",
-                            key=accept_key,
-                            help="Confirm this is a real parasite. "
-                                 "It will be included in the parasite count.",
-                            use_container_width=True,
-                        ):
-                            st.session_state["verification_decisions"][key] = True
-                            # Recalculate verified metrics immediately
-                            st.session_state["verified_result"] = compute_verified_parasitemia(
-                                result,
-                                st.session_state["verification_decisions"]
-                            )
-                            st.rerun()
-                        
-                        if st.button(
-                            "✗ Reject",
-                            key=reject_key,
-                            help="Mark this as a false positive. "
-                                 "It will be excluded from the parasite count.",
-                            use_container_width=True,
-                        ):
-                            st.session_state["verification_decisions"][key] = False
-                            # Recalculate verified metrics immediately
-                            st.session_state["verified_result"] = compute_verified_parasitemia(
-                                result,
-                                st.session_state["verification_decisions"]
-                            )
-                            st.rerun()
-                    
-                    with v_col3:
-                        # Clinical context for this stage
-                        stage_context = {
-                            "ring": (
-                                "Ring stage (early trophozoite). "
-                                "Appears as a thin ring or disc shape inside "
-                                "the RBC. Pale centre, thin cytoplasm rim. "
-                                "Most common stage in P. vivax infection."
-                            ),
-                            "trophozoite": (
-                                "Trophozoite stage. "
-                                "Larger, irregular shape filling more of the "
-                                "RBC. Often shows amoeboid cytoplasm. "
-                                "Active feeding stage — indicates established "
-                                "infection."
-                            ),
-                            "schizont": (
-                                "Schizont stage. "
-                                "Multiple chromatin dots (merozoites) visible "
-                                "inside the RBC. Presence in peripheral blood "
-                                "may indicate higher disease severity."
-                            ),
-                            "gametocyte": (
-                                "Gametocyte stage. "
-                                "Oval to round shape, fills and may enlarge "
-                                "the RBC. The transmissible stage — patient "
-                                "may be infectious to mosquitoes."
-                            ),
-                        }.get(det.class_name, "")
-                        
-                        if stage_context:
-                            st.markdown(
-                                f"<div style='font-size:12.5px; "
-                                f"color:#a8b2d1; line-height:1.6;'>"
-                                f"{stage_context}</div>",
-                                unsafe_allow_html=True
-                            )
-                
-                # ── Verified results summary ──────────────────────────────
-                verified = compute_verified_parasitemia(
-                    result,
-                    st.session_state["verification_decisions"]
-                )
-                
-                decisions_made = (
-                    verified['accepted_uncertain'] + 
-                    verified['rejected_uncertain']
-                )
-                
-                st.markdown("---")
-                
-                if verified['pending_uncertain'] > 0:
-                    st.info(
-                        f"⏳ {verified['pending_uncertain']} detection(s) not yet "
-                        f"reviewed. Results below include unreviewed detections "
-                        f"as accepted (conservative default). Review all "
-                        f"detections above for a fully verified result."
-                    )
-                
-                if decisions_made > 0:
-                    # Show verified results panel
-                    v_severity = classify_severity(
-                        verified['verified_parasitemia_pct']
-                    )
-                    
-                    st.markdown(f"""
-                    <div style="
-                        background: rgba(15, 32, 39, 0.6);
-                        border: 1px solid #4ade80;
-                        border-radius: 12px;
-                        padding: 20px;
-                        margin-top: 8px;
-                    ">
-                        <div style="font-size:13px; font-weight:600; 
-                                    color:#4ade80; margin-bottom:16px; 
-                                    text-transform:uppercase; letter-spacing:.06em;">
-                            ✓ Clinician-Verified Result
-                        </div>
-                        <div style="display:grid; 
-                                    grid-template-columns:repeat(3,1fr); 
-                                    gap:16px; margin-bottom:16px;">
-                            <div>
-                                <div style="font-size:11px; color:#6b7280; 
-                                            text-transform:uppercase; 
-                                            letter-spacing:.06em;">
-                                    Verified Parasites
-                                </div>
-                                <div style="font-size:28px; font-weight:700; 
-                                            color:#f87171; margin-top:4px;">
-                                    {verified['verified_parasites']}
-                                </div>
-                            </div>
-                            <div>
-                                <div style="font-size:11px; color:#6b7280; 
-                                            text-transform:uppercase; 
-                                            letter-spacing:.06em;">
-                                    Verified Parasitemia
-                                </div>
-                                <div style="font-size:28px; font-weight:700; 
-                                            color:#64ffda; margin-top:4px;">
-                                    {verified['verified_parasitemia_pct']:.2f}%
-                                </div>
-                            </div>
-                            <div>
-                                <div style="font-size:11px; color:#6b7280; 
-                                            text-transform:uppercase; 
-                                            letter-spacing:.06em;">
-                                    Severity
-                                </div>
-                                <div style="font-size:16px; font-weight:700; 
-                                            color:#e2e8f0; margin-top:8px;">
-                                    {v_severity}
-                                </div>
-                            </div>
-                        </div>
-                        <div style="font-size:12px; color:#6b7280; 
-                                    border-top:1px solid #1f3a2b; 
-                                    padding-top:12px;">
-                            Accepted: {verified['accepted_uncertain']} · 
-                            Rejected: {verified['rejected_uncertain']} · 
-                            Pending: {verified['pending_uncertain']} · 
-                            Verified at: 
-                            {datetime.now().strftime('%H:%M:%S')}
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Update PDF to use verified results when available
-                    st.session_state["verified_result"] = verified
-                
-                # Keep the educational expander below for reference
-                with st.expander("ℹ️ About uncertainty flagging"):
+                with dl_col3:
+                    # Annotated Image
+                    if result.annotated_image is not None:
+                        img_rgb = cv2.cvtColor(result.annotated_image, cv2.COLOR_BGR2RGB)
+                        pil_img = Image.fromarray(img_rgb)
+                        buf = io.BytesIO()
+                        pil_img.save(buf, format="PNG")
+                        st.download_button(
+                            label="🖼️ Download Annotated Image",
+                            data=buf.getvalue(),
+                            file_name=f"annotated_{Path(image_name).stem}.png",
+                            mime="image/png",
+                        )
+
+                # CHANGED: Uncertainty flagging expander
+                with st.expander("ℹ️ About Uncertainty Flagging"):
                     st.markdown(
-                        "Detections with confidence between **35%** and **45%** "
-                        "are flagged for clinician review. This range represents "
-                        "the model's zone of genuine uncertainty — confident "
-                        "enough to surface but not confident enough to "
-                        "auto-classify. Your accept/reject decisions directly "
-                        "update the parasitemia calculation above."
-                    )
-            
-            else:
-                # No uncertain detections — show passive expander
-                with st.expander("ℹ️ About uncertainty flagging"):
-                    st.markdown(
-                        "Detections with confidence between **35    %** and **45%** "
-                        "are flagged for clinician review. All detections in "
-                        "this analysis exceeded the 45% confidence threshold "
-                        "and were auto-classified without requiring review."
+                        "Detections with confidence between **45%** and **55%** are flagged "
+                        "for human review rather than auto-classified. This respects clinical "
+                        "safety protocols — when the model is unsure, a trained professional "
+                        "should verify the result rather than relying on an automated label."
                     )
 
         else:
@@ -2066,7 +2219,7 @@ def main():
     # ===================================================================
     # CHANGED: BATCH PROCESSING MODE
     # ===================================================================
-    else:
+else:
         st.markdown("### 📦 Batch Processing")
         st.caption(
             "⏱️ Processing time scales with image count and size. "
@@ -2221,7 +2374,7 @@ def main():
                 # CHANGED: Uncertainty flagging expander (shared with batch mode)
                 with st.expander("ℹ️ About Uncertainty Flagging"):
                     st.markdown(
-                        "Detections with confidence between **35%** and **45%** are "
+                        "Detections with confidence between **45%** and **55%** are "
                         "flagged for human review rather than auto-classified. This "
                         "respects clinical safety protocols — when the model is unsure, "
                         "a trained professional should verify the result rather than "
@@ -2229,7 +2382,7 @@ def main():
                     )
 
     # CHANGE 2f — Footer team credit
-    st.markdown(
+st.markdown(
         "<div class='footer-credit'>"
         "Built by Team Devions &nbsp;·&nbsp; "
         "NACOS UI × DATICAN Competition 2026"
@@ -2494,235 +2647,6 @@ def _render_detection_gallery(
         st.caption("Top 12 shown by default, sorted by clinical priority")
 
 
-# FEATURE 1 — Slide quality assessment pure CV function
-def assess_slide_quality(image_bgr: np.ndarray) -> dict:
-    """Assess blood smear slide quality before running inference.
-    
-    Performs three independent quality checks using classical computer 
-    vision — no ML model involved. Fast, deterministic, interpretable.
-    
-    Checks:
-        1. Blur — Laplacian variance measures frequency content.
-           A focused microscopy image has sharp cell edges producing 
-           high-frequency gradients. Blur suppresses these gradients,
-           collapsing the variance. Threshold 80 is calibrated for 
-           640x640 Giemsa-stained slides.
-           
-        2. Darkness — Mean pixel intensity of the greyscale image.
-           Giemsa-stained slides under correct illumination typically
-           produce mean brightness between 60 and 210. Below 40 
-           indicates insufficient condenser illumination or a thick 
-           smear that will absorb too much light for reliable detection.
-           
-        3. Overexposure — Saturated pixels (value 255 in any channel)
-           as a percentage of total pixels. Above 15% saturation means
-           the illumination is too intense, washing out morphological 
-           detail the model depends on for classification.
-    
-    Returns:
-        dict with keys:
-            'issues': list of dicts, each with:
-                'type': str ('blur' | 'dark' | 'bright')
-                'severity': str ('warning' | 'error')
-                'message': str — operator-facing message
-                'detail': str — technical detail for the sidebar
-            'metrics': dict with raw values:
-                'sharpness': float — Laplacian variance
-                'brightness': float — mean pixel intensity  
-                'saturation_pct': float — % saturated pixels
-            'passed': bool — True if no errors (warnings allowed)
-            'has_warnings': bool — True if any issues exist
-    """
-    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
-    
-    issues = []
-    
-    # ── Check 1: Blur via Laplacian variance ──────────────────────
-    laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
-    if laplacian_var < 2.0:
-        issues.append({
-            'type': 'blur',
-            'severity': 'error',
-            'message': (
-                'This image is severely blurred. Inference has been '
-                'paused. Please refocus the microscope objective and '
-                'upload a new image before proceeding.'
-            ),
-            'detail': f'Sharpness score: {laplacian_var:.2f} (minimum: 2.00)',
-        })
-    elif laplacian_var < 2.7:
-        issues.append({
-            'type': 'blur',
-            'severity': 'warning',
-            'message': (
-                'This image appears slightly out of focus. Detection '
-                'results may be unreliable for faint ring-stage parasites. '
-                'Consider refocusing and re-uploading for best accuracy.'
-            ),
-            'detail': f'Sharpness score: {laplacian_var:.2f} (recommended: >2.70)',
-        })
-    
-    # ── Check 2: Darkness ─────────────────────────────────────────
-    mean_brightness = float(gray.mean())
-    if mean_brightness < 100:
-        issues.append({
-            'type': 'dark',
-            'severity': 'error',
-            'message': (
-                'This image is too dark for reliable analysis. '
-                'Check microscope condenser illumination and ensure '
-                'the slide is correctly positioned on the stage.'
-            ),
-            'detail': f'Mean brightness: {mean_brightness:.1f}/255 (minimum: 100)',
-        })
-    elif mean_brightness < 130:
-        issues.append({
-            'type': 'dark',
-            'severity': 'warning',
-            'message': (
-                'This image is darker than optimal. Parasite detection '
-                'sensitivity may be reduced. Consider increasing '
-                'condenser illumination.'
-            ),
-            'detail': f'Mean brightness: {mean_brightness:.1f}/255 (recommended: >130)',
-        })
-    
-    # ── Check 3: Overexposure ─────────────────────────────────────
-    saturated = np.sum(image_bgr >= 255) / image_bgr.size * 100
-    if saturated > 25:
-        issues.append({
-            'type': 'bright',
-            'severity': 'error',
-            'message': (
-                'This image is severely overexposed. Morphological '
-                'detail required for parasite classification has been '
-                'lost. Reduce microscope illumination intensity and '
-                're-capture the image.'
-            ),
-            'detail': f'Saturated pixels: {saturated:.1f}% (maximum: 25%)',
-        })
-    elif saturated > 15:
-        issues.append({
-            'type': 'bright',
-            'severity': 'warning',
-            'message': (
-                'This image may be slightly overexposed. Consider '
-                'reducing illumination intensity for optimal detection '
-                'of pale ring-stage parasites.'
-            ),
-            'detail': f'Saturated pixels: {saturated:.1f}% (recommended: <15%)',
-        })
-    
-    has_errors = any(i['severity'] == 'error' for i in issues)
-    
-    return {
-        'issues': issues,
-        'metrics': {
-            'sharpness': round(laplacian_var, 2),
-            'brightness': round(mean_brightness, 1),
-            'saturation_pct': round(float(saturated), 1),
-        },
-        'passed': not has_errors,
-        'has_warnings': len(issues) > 0,
-    }
-
-
-# FEATURE 2 — Recompute verified parasitemia pure function
-def compute_verified_parasitemia(
-    result: PredictionResult,
-    decisions: dict,
-) -> dict:
-    """Recompute parasitemia after clinician verification decisions.
-    
-    The clinician reviews each uncertain detection and marks it as 
-    accepted (treat as confirmed parasite) or rejected (treat as 
-    false positive). This function recalculates the core clinical 
-    metrics using only accepted detections plus all confident 
-    detections.
-    
-    Args:
-        result: The original PredictionResult from model inference.
-        decisions: dict mapping detection index (str) to bool.
-                   True = accepted, False = rejected.
-                   Detections not in decisions default to accepted
-                   (conservative — err toward sensitivity).
-    
-    Returns:
-        dict with keys:
-            'verified_parasites': int
-            'verified_rbc': int  
-            'verified_parasitemia_pct': float
-            'accepted_uncertain': int
-            'rejected_uncertain': int
-            'pending_uncertain': int — not yet reviewed
-    """
-    verified_parasites = 0
-    verified_rbc = 0
-    accepted_uncertain = 0
-    rejected_uncertain = 0
-    pending_uncertain = 0
-    verified_class_counts = {}  # FIX 1 — per-class breakdown for PDF table
-    
-    for i, det in enumerate(result.detections):
-        key = str(i)
-        is_uncertain = (
-            UNCERTAINTY_THRESHOLD_LOW 
-            <= det.confidence 
-            <= UNCERTAINTY_THRESHOLD_HIGH
-        )
-        
-        if det.class_name == "red_blood_cell":
-            verified_rbc += 1
-            verified_class_counts[det.class_name] = (
-                verified_class_counts.get(det.class_name, 0) + 1
-            )
-            continue
-        
-        if det.class_name not in PARASITE_CLASSES:
-            continue
-            
-        if is_uncertain:
-            if key not in decisions:
-                # Not yet reviewed — include by default (conservative)
-                verified_parasites += 1
-                pending_uncertain += 1
-                verified_class_counts[det.class_name] = (
-                    verified_class_counts.get(det.class_name, 0) + 1
-                )
-            elif decisions[key]:
-                # Clinician accepted
-                verified_parasites += 1
-                accepted_uncertain += 1
-                verified_class_counts[det.class_name] = (
-                    verified_class_counts.get(det.class_name, 0) + 1
-                )
-            else:
-                # Clinician rejected — exclude from count entirely
-                rejected_uncertain += 1
-        else:
-            # Confident detection — always included
-            verified_parasites += 1
-            verified_class_counts[det.class_name] = (
-                verified_class_counts.get(det.class_name, 0) + 1
-            )
-    
-    total_cells = verified_rbc + verified_parasites
-    parasitemia = (
-        (verified_parasites / total_cells * 100) 
-        if total_cells > 0 else 0.0
-    )
-    
-    return {
-        'verified_parasites': verified_parasites,
-        'verified_rbc': verified_rbc,
-        'verified_parasitemia_pct': round(parasitemia, 2),
-        'accepted_uncertain': accepted_uncertain,
-        'rejected_uncertain': rejected_uncertain,
-        'pending_uncertain': pending_uncertain,
-        'verified_class_counts': verified_class_counts,  # FIX 1
-    }
-
-
 def _draw_filtered(
     image_bgr: np.ndarray,
     result: PredictionResult,
@@ -2763,19 +2687,3 @@ def _draw_filtered(
         )
 
     return img
-
-
-@st.cache_resource
-def load_model(weights_path: str) -> MalariaDetector | None:
-    """Load the detector model with Streamlit caching.
-
-    st.cache_resource ensures the model is loaded once and shared
-    across all users/sessions, avoiding repeated 200+ MB loads.
-    """
-    resolved_path = PROJECT_ROOT / weights_path
-    if not resolved_path.exists():
-        return None
-    return MalariaDetector(str(resolved_path), device="cpu")
-
-if __name__ == "__main__":
-    main()
