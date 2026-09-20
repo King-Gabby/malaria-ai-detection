@@ -1,19 +1,21 @@
-#From Team Devions!
-#PlasmoID AI — Pinned Dependencies
-#Install: pip install -r requirements.txt
+# RaphaID AI — Pinned Dependencies
+# Install: pip install -r requirements.txt
 
 # ---------- Core ML ----------
 ultralytics==8.3.40
 torch==2.2.2
 torchvision==0.17.2
+onnxruntime==1.18.0
+onnx==1.16.0
 
 # ---------- Web App ----------
 streamlit==1.40.2
-
+streamlit-option-menu==0.3.6
 
 # ---------- Computer Vision ----------
 opencv-python-headless==4.10.0.84
 Pillow==11.0.0
+pydicom==3.0.1
 
 # ---------- Data / Science ----------
 numpy==1.26.4
@@ -21,6 +23,15 @@ pandas==2.2.3
 matplotlib==3.9.3
 seaborn==0.13.2
 scikit-learn==1.5.2
+scipy==1.13.1
+
+# ---------- RAG / LLM ----------
+sentence-transformers==2.7.0
+chromadb==0.5.5
+faiss-cpu==1.8.0
+langchain==0.2.16
+langgraph==0.1.2
+langchain-community==0.2.16
 
 # ---------- Config ----------
 pyyaml==6.0.2
@@ -32,3 +43,7 @@ fpdf2==2.8.2
 tqdm==4.67.1
 requests==2.32.3
 plotly==5.18.0
+sqlite-utils==3.37.0
+
+# ---------- Optional: Local LLM ----------
+# llama-cpp-python==0.2.90  # Uncomment for local GGUF LLM support

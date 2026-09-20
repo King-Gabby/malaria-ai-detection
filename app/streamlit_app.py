@@ -750,8 +750,8 @@ def show_splash_screen():  #CHANGED
     <div class="splash-overlay">
         <div class="splash-card">
             <div class="logo-circle">🔬</div>
-            <h1 class="splash-title">🔬 PlasmoID AI</h1>
-            <p class="splash-subtitle">AI Assisted Clinical Assistant for Malaria Microscopy</p>
+            <h1 class="splash-title">🩺 RaphaID AI</h1>
+            <p class="splash-subtitle">Offline Multi-Disease Diagnostic Tool</p>
             <div class="splash-status">
                 <span class="status-dot"></span>
                 <span id="status-text">Loading detection model...</span>
@@ -802,10 +802,10 @@ def render_dashboard():
                 border-radius: 14px; padding: 1.2rem 1.8rem; margin-bottom: 1rem;
                 border: 1px solid rgba(255,255,255,0.12); text-align: center;">
         <h2 style="color: #FFFFFF; margin-bottom: 0.2rem; font-size: 1.8rem;">
-           🔬 PlasmoID AI
+           🩺 RaphaID AI
         </h2>
         <p style="color: #D8DEE9; margin: 0 0 0.3rem 0; font-size: 0.95rem;">
-            AI-Assisted Clinical Decision Support
+            Offline Multi-Disease Diagnostic Tool
         </p>
         <p style="color: #9AA4B2; margin: 0 0 1rem 0; font-size: 0.78rem;">
             YOLOv8n · WHO Workflow · Human Verification
@@ -947,7 +947,7 @@ def render_dashboard():
 def main():
     # --- Page config ---
     st.set_page_config(
-        page_title="PlasmoID AI",
+        page_title="RaphaID AI",
         page_icon="🔬",
         layout="wide",
         initial_sidebar_state="expanded",
@@ -1556,7 +1556,7 @@ def main():
     # PART 2b — Sidebar navigation (rendered on ALL pages)
     with st.sidebar:
         # CHANGE 5 — Logo + Navigation + Status only in sidebar
-        st.markdown("## 🔬 PlasmoID AI")
+        st.markdown("## 🩺 RaphaID AI")
         st.caption("AI-Powered Clinical Assistant")
         st.markdown("---")
 
@@ -1608,7 +1608,7 @@ def main():
                          margin-bottom: 0.5rem; display: inline-block;">
                 AI Clinical Assistant
             </span>
-            <h1>🔬 PlasmoID AI</h1>
+            <h1>🔬 RaphaID AI</h1>
             <p>Detects and classifies <em>malaria</em> parasite stages from microscopy images in seconds</p>
         </div>
         """, unsafe_allow_html=True)
@@ -2838,6 +2838,64 @@ def main():
                         mime="text/csv",
                     )
 
+                    # --- PDF Reports for each image ---
+                    st.markdown("### 📄 Individual PDF Reports")
+                    pdf_cols = st.columns(3)
+                    for idx, (pid, res) in enumerate(batch_results_map.items()):
+                        col_idx = idx % 3
+                        with pdf_cols[col_idx]:
+                            try:
+                                # Generate PDF for this image
+                                unc_count, _ = _count_tiers(res)
+                                if res.total_parasites == 0:
+                                    scan_status = "Negative: No parasites detected"
+                                elif unc_count > 0 and res.total_parasites == unc_count:
+                                    scan_status = "Needs Review: Uncertain detections only"
+                                else:
+                                    scan_status = f"Positive — {res.total_parasites} parasite(s) detected"
+
+                                pdf_bytes = generate_pdf_report(
+                                    res,
+                                    batch_annotated.get(pid),
+                                    uncertain_count=unc_count,
+                                    patient_details=st.session_state.get("patient_details"),
+                                    report_meta=st.session_state.get("report_meta"),
+                                    scan_status=scan_status,
+                                    verified_data=None,
+                                )
+                                pdf_filename = f"{pid}_malaria_report.pdf"
+                                st.download_button(
+                                    label=f"📄 {pid}",
+                                    data=pdf_bytes,
+                                    file_name=pdf_filename,
+                                    mime="application/pdf",
+                                    key=f"pdf_{pid}",
+                                )
+                            except ImportError:
+                                st.warning("Install `fpdf2` for PDF generation: `pip install fpdf2`")
+                                break
+                            except Exception as e:
+                                st.error(f"PDF error for {pid}: {e}")
+
+                    # --- Annotated Images Download ---
+                    st.markdown("### 🖼️ Annotated Images")
+                    img_cols = st.columns(3)
+                    for idx, (pid, ann_img) in enumerate(batch_annotated.items()):
+                        col_idx = idx % 3
+                        with img_cols[col_idx]:
+                            if ann_img is not None:
+                                img_rgb = cv2.cvtColor(ann_img, cv2.COLOR_BGR2RGB)
+                                pil_img = Image.fromarray(img_rgb)
+                                buf = io.BytesIO()
+                                pil_img.save(buf, format="PNG")
+                                st.download_button(
+                                    label=f"🖼️ {pid}",
+                                    data=buf.getvalue(),
+                                    file_name=f"annotated_{pid}.png",
+                                    mime="image/png",
+                                    key=f"img_{pid}",
+                                )
+
                     # CHANGED: Uncertainty warning if any image has uncertain detections
                     total_uncertain = sum(
                         r.get("Uncertain Detections", 0)
@@ -2936,14 +2994,15 @@ def main():
                            f"Brightness: {q['brightness']}/255 · "
                            f"Saturation: {q['saturation_pct']}%")
 
-    # CHANGE 2f — Footer team credit
-    st.markdown(
-        "<div class='footer-credit'>"
-        "Built by Team Devions &nbsp;·&nbsp; "
-        "NACOS UI × DATICAN Competition 2026"
-        "</div>",
-        unsafe_allow_html=True
-    )
+    # CHANGE 2f — Footer team credit (only on dashboard)
+    if st.session_state["current_page"] == "dashboard":
+        st.markdown(
+            "<div class='footer-credit'>"
+            "Built by Team Devions &nbsp;·&nbsp; "
+            "NACOS UI × DATICAN Competition 2026"
+            "</div>",
+            unsafe_allow_html=True
+        )
 
 
 # CHANGE 6
