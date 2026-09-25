@@ -189,7 +189,8 @@ def generate_ct_report(
     pdf.set_font("Helvetica", "", 10)
     if nodule_count > 0:
         pdf.multi_cell(0, 6, f"Nodules detected: {nodule_count}")
-        pdf.multi_cell(0, 6, f"Total estimated nodule volume: {total_vol:.1f} mm³ ({total_vol/1000:.3f} mL)")
+        pdf.set_x(pdf.l_margin)
+        pdf.multi_cell(0, 6, f"Total estimated nodule volume: {total_vol:.1f} mm3 ({total_vol/1000:.3f} mL)")
 
         # Fleischner Society guidelines reference
         pdf.ln(2)
@@ -197,10 +198,10 @@ def generate_ct_report(
         pdf.cell(0, 7, "Fleischner Society Guidelines (2017):", ln=True)
         pdf.set_font("Helvetica", "", 9)
         pdf.multi_cell(0, 5, (
-            "• Solid nodule <6mm: No routine follow-up (low risk); optional CT at 12 months (high risk)\n"
-            "• Solid nodule 6-8mm: CT at 6-12 months, then 18-24 months\n"
-            "• Solid nodule >8mm: Consider PET/CT, tissue sampling, or CT at 3 months\n"
-            "• Subsolid/ground-glass: Different follow-up algorithm applies"
+            "- Solid nodule <6mm: No routine follow-up (low risk); optional CT at 12 months (high risk)\n"
+            "- Solid nodule 6-8mm: CT at 6-12 months, then 18-24 months\n"
+            "- Solid nodule >8mm: Consider PET/CT, tissue sampling, or CT at 3 months\n"
+            "- Subsolid/ground-glass: Different follow-up algorithm applies"
         ))
     else:
         pdf.multi_cell(0, 6, "No pulmonary nodules detected.")

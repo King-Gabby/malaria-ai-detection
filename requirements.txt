@@ -1,10 +1,11 @@
 # RaphaID AI — Pinned Dependencies
 # Install: pip install -r requirements.txt
+# Tested working versions (2026-09-25)
 
 # ---------- Core ML ----------
 ultralytics==8.3.40
-torch==2.2.2
-torchvision==0.17.2
+torch==2.14.0
+torchvision==0.29.0
 onnxruntime==1.18.0
 onnx==1.16.0
 
@@ -13,12 +14,12 @@ streamlit==1.40.2
 streamlit-option-menu==0.3.6
 
 # ---------- Computer Vision ----------
-opencv-python-headless==4.10.0.84
+opencv-python==5.0.0.93
 Pillow==11.0.0
 pydicom==3.0.1
 
 # ---------- Data / Science ----------
-numpy==1.26.4
+numpy==2.5.3
 pandas==2.2.3
 matplotlib==3.9.3
 seaborn==0.13.2

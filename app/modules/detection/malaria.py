@@ -201,7 +201,11 @@ class MalariaDetector:
 
 @st.cache_resource
 def load_malaria_model(weights_path: str, device: str = "cpu") -> MalariaDetector | None:
-    """Cached model loader for Streamlit."""
+    """Cached model loader for Streamlit - LOCAL FILES ONLY."""
+    if not Path(weights_path).exists():
+        print(f"Malaria model weights not found locally: {weights_path}")
+        return None
+    
     try:
         return MalariaDetector(weights_path, device)
     except Exception as e:

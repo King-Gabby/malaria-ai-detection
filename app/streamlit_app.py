@@ -3,6 +3,32 @@ RaphaID AI — Offline Multi-Disease Diagnostic Tool
 Main Streamlit application integrating Detection, Radiology, and Chatbot modules.
 """
 
+# ---------------------------------------------------------------------------
+# CRITICAL FIX: PyTorch 2.1+ torch.classes compatibility
+# Must be applied BEFORE any torch/ultralytics imports
+# ---------------------------------------------------------------------------
+import torch
+import torch._classes as _tc
+
+# Monkey patch _ClassNamespace to gracefully handle __path__/__file__ access
+# This prevents: "Tried to instantiate class '__path__.__file__', but it does not exist!"
+_original_namespace_getattr = _tc._ClassNamespace.__getattr__
+
+def _safe_namespace_getattr(self, attr):
+    try:
+        return _original_namespace_getattr(self, attr)
+    except RuntimeError as e:
+        error_str = str(e)
+        # Handle __path__.__file__ and similar access patterns that fail in PyTorch 2.1+
+        if '__path__' in error_str or '__file__' in error_str:
+            # Return empty list for __path__ access (common pattern for namespace packages)
+            # Return empty string for __file__ access
+            return [] if '__path__' in self.name else ''
+        raise
+
+_tc._ClassNamespace.__getattr__ = _safe_namespace_getattr
+# ---------------------------------------------------------------------------
+
 import sys
 import time
 from datetime import datetime
@@ -146,10 +172,10 @@ def _count_tiers(detections, parasite_classes, low=0.35, high=0.45):
     return uncertain, confident
 
 
-def _draw_filtered(image_bgr, detections, config, class_colors):
+def _draw_filtered(image_bgr, detections, config, class_colors, submodule: str):
     """Draw detections with uncertainty highlighting, optionally filtering classes."""
     img = image_bgr.copy()
-    show_all = st.session_state.get("show_all_classes", True)
+    show_all = st.session_state.get(f"show_all_{submodule}", True)
 
     for det in detections:
         # Skip normal/healthy classes if filter is on
@@ -359,7 +385,7 @@ def _render_detection_module(submodule: str):
         st.markdown("### ⚙️ Detection Settings")
         conf = st.slider("Confidence Threshold", 0.05, 0.95, 0.25, 0.05, key=f"conf_{submodule}")
         iou = st.slider("NMS IoU", 0.1, 0.9, 0.45, 0.05, key=f"iou_{submodule}")
-        st.session_state[f"show_all_{submodule}"] = st.checkbox(
+        st.checkbox(
             "Show all classes (incl. healthy)", value=True, key=f"show_all_{submodule}"
         )
 
@@ -449,7 +475,7 @@ def _render_detection_module(submodule: str):
         with c1:
             st.image(cv2.cvtColor(img, cv2.COLOR_BGR2RGB), caption="Original", use_container_width=True)
         with c2:
-            display_img = _draw_filtered(img, result.detections, config, class_colors)
+            display_img = _draw_filtered(img, result.detections, config, class_colors, submodule)
             st.image(cv2.cvtColor(display_img, cv2.COLOR_BGR2RGB), caption="Detections", use_container_width=True)
 
         # Uncertainty check

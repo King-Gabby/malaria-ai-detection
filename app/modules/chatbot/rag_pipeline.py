@@ -5,12 +5,39 @@ Uses local embeddings and vector store for grounded responses.
 
 import os
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import Any, Dict, List, Optional
 import streamlit as st
 
-from sentence_transformers import SentenceTransformer
-import chromadb
-from chromadb.config import Settings
+try:
+    from sentence_transformers import SentenceTransformer
+    SENTENCE_TRANSFORMERS_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dependency may be absent
+    SentenceTransformer = Any
+    SENTENCE_TRANSFORMERS_AVAILABLE = False
+
+try:
+    import chromadb
+    from chromadb.config import Settings
+    CHROMADB_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dependency may be absent
+    chromadb = None
+    Settings = None
+    CHROMADB_AVAILABLE = False
+
+
+def _require_rag_dependencies() -> None:
+    """Fail fast with a clear message when chatbot extras are missing."""
+    missing = []
+    if not SENTENCE_TRANSFORMERS_AVAILABLE:
+        missing.append("sentence-transformers")
+    if not CHROMADB_AVAILABLE:
+        missing.append("chromadb")
+
+    if missing:
+        raise ImportError(
+            "Chatbot dependencies are missing. Install the project requirements with: "
+            "pip install -r requirements.txt"
+        )
 
 
 class RAGPipeline:
@@ -22,6 +49,7 @@ class RAGPipeline:
         embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2",
         collection_name: str = "medical_knowledge",
     ):
+        _require_rag_dependencies()
         self.persist_dir = Path(persist_dir)
         self.persist_dir.mkdir(parents=True, exist_ok=True)
         self.embedding_model_name = embedding_model
@@ -36,10 +64,20 @@ class RAGPipeline:
     @st.cache_resource
     def _load_embedder(_self) -> SentenceTransformer:
         """Load embedding model (cached)."""
+        if not SENTENCE_TRANSFORMERS_AVAILABLE:
+            raise ImportError(
+                "Chatbot dependencies are missing. Install the project requirements with: "
+                "pip install -r requirements.txt"
+            )
         return SentenceTransformer(_self.embedding_model_name, device="cpu")
 
-    def _init_client(self) -> chromadb.Client:
+    def _init_client(self) -> Any:
         """Initialize ChromaDB client."""
+        if not CHROMADB_AVAILABLE:
+            raise ImportError(
+                "Chatbot dependencies are missing. Install the project requirements with: "
+                "pip install -r requirements.txt"
+            )
         return chromadb.PersistentClient(
             path=str(self.persist_dir),
             settings=Settings(anonymized_telemetry=False),

@@ -4,10 +4,22 @@ Routes queries, retrieves context, generates grounded responses.
 """
 
 from typing import Dict, List, Optional, TypedDict
-from langgraph.graph import StateGraph, END
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-from langchain_community.llms import Ollama
-from langchain_core.prompts import ChatPromptTemplate
+
+import streamlit as st
+
+try:
+    from langgraph.graph import StateGraph, END
+    from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+    from langchain_community.llms import Ollama
+    from langchain_core.prompts import ChatPromptTemplate
+    LANGCHAIN_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional runtime extras may be absent
+    StateGraph = None
+    END = None
+    HumanMessage = AIMessage = SystemMessage = None
+    Ollama = None
+    ChatPromptTemplate = None
+    LANGCHAIN_AVAILABLE = False
 
 from .rag_pipeline import RAGPipeline, get_rag_pipeline
 
@@ -32,6 +44,11 @@ class LangGraphOrchestrator:
         llm_model: str = "llama3.2:3b",
         ollama_base_url: str = "http://localhost:11434",
     ):
+        if not LANGCHAIN_AVAILABLE:
+            raise ImportError(
+                "Chatbot dependencies are missing. Install the project requirements with: "
+                "pip install -r requirements.txt"
+            )
         self.rag = rag_pipeline or get_rag_pipeline()
         self.llm = Ollama(model=llm_model, base_url=ollama_base_url, temperature=0.1)
         self.graph = self._build_graph()

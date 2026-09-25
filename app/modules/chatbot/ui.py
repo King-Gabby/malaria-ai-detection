@@ -12,25 +12,31 @@ from .langgraph_orchestrator import get_orchestrator
 
 def render_chatbot_ui() -> None:
     """Render the medical assistant chatbot UI."""
-    st.markdown("### 🤖 Medical Assistant (RAG + LangGraph)")
-    st.caption("Grounded in WHO/NCDC guidelines. Responses include citations. Not for standalone diagnosis.")
+    try:
+        st.markdown("### 🤖 Medical Assistant (RAG + LangGraph)")
+        st.caption("Grounded in WHO/NCDC guidelines. Responses include citations. Not for standalone diagnosis.")
 
-    # Initialize session state for chat history
-    if "chat_history" not in st.session_state:
-        st.session_state.chat_history = []
+        # Initialize session state for chat history
+        if "chat_history" not in st.session_state:
+            st.session_state.chat_history = []
 
-    if "rag_initialized" not in st.session_state:
-        with st.spinner("Loading medical knowledge base..."):
-            rag = get_rag_pipeline()
-            chunks_loaded = rag.load_medical_knowledge()
-            st.session_state.rag_initialized = True
-            if chunks_loaded > 0:
-                st.success(f"Loaded {chunks_loaded} knowledge chunks from guidelines.")
-            else:
-                st.warning("No medical knowledge files found in data/medical_knowledge/. Add .md or .txt files for RAG.")
+        if "rag_initialized" not in st.session_state:
+            with st.spinner("Loading medical knowledge base..."):
+                rag = get_rag_pipeline()
+                chunks_loaded = rag.load_medical_knowledge()
+                st.session_state.rag_initialized = True
+                if chunks_loaded > 0:
+                    st.success(f"Loaded {chunks_loaded} knowledge chunks from guidelines.")
+                else:
+                    st.warning("No medical knowledge files found in data/medical_knowledge/. Add .md or .txt files for RAG.")
 
-    # Initialize orchestrator
-    orchestrator = get_orchestrator()
+        # Initialize orchestrator
+        orchestrator = get_orchestrator()
+    except ImportError as exc:
+        st.error("The medical chatbot requires optional dependencies that are not installed in this environment.")
+        st.code("pip install -r requirements.txt")
+        st.caption(str(exc))
+        return
 
     # Display chat history
     for msg in st.session_state.chat_history:

@@ -215,7 +215,16 @@ class MRIDetector:
 
 @st.cache_resource
 def load_mri_model(weights_path: str, seg_weights_path: str = None, device: str = "cpu") -> MRIDetector | None:
-    """Cached model loader for Streamlit."""
+    """Cached model loader for Streamlit - LOCAL FILES ONLY."""
+    # Verify weights file exists locally
+    if not Path(weights_path).exists():
+        print(f"MRI model weights not found locally: {weights_path}")
+        return None
+    
+    if seg_weights_path and not Path(seg_weights_path).exists():
+        print(f"MRI segmentation weights not found locally: {seg_weights_path}")
+        seg_weights_path = None
+    
     try:
         return MRIDetector(weights_path, seg_weights_path, device)
     except Exception as e:

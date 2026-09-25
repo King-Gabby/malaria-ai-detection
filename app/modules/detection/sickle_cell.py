@@ -201,6 +201,11 @@ class SickleCellDetector:
 
 @st.cache_resource
 def load_sickle_cell_model(weights_path: str, device: str = "cpu") -> SickleCellDetector | None:
+    """Cached model loader for Streamlit - LOCAL FILES ONLY."""
+    if not Path(weights_path).exists():
+        print(f"Sickle cell model weights not found locally: {weights_path}")
+        return None
+    
     try:
         return SickleCellDetector(weights_path, device)
     except Exception as e:

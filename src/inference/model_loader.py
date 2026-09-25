@@ -1,6 +1,7 @@
 """
 Model Loader — Lazy Loading & Quantization Support
 Loads models on-demand with ONNX Runtime optimization for CPU.
+Enforces LOCAL-ONLY loading to prevent GitHub API timeouts.
 """
 
 import os
@@ -23,6 +24,7 @@ class ModelLoader:
     def get_model_path(self, module: str, model_name: str, quantized: bool = True) -> Optional[Path]:
         """
         Get path to model file, preferring quantized versions.
+        ONLY searches local filesystem - NEVER downloads from internet.
 
         Args:
             module: 'detection', 'radiology', or 'chatbot'
@@ -30,7 +32,7 @@ class ModelLoader:
             quantized: Whether to prefer quantized (.onnx) over original (.pt)
 
         Returns:
-            Path to model file or None if not found
+            Path to model file or None if not found locally
         """
         module_dir = self.models_dir / module
         if not module_dir.exists():
@@ -53,20 +55,31 @@ class ModelLoader:
 
     @st.cache_resource
     def load_yolo_model(_self, model_path: str, device: str = "cpu") -> Optional[YOLO]:
-        """Load YOLO model (cached)."""
+        """Load YOLO model (cached) - LOCAL FILES ONLY."""
+        # Verify file exists locally before loading
+        if not Path(model_path).exists():
+            print(f"Model file not found locally: {model_path}")
+            return None
+            
         try:
+            # Disable auto-download by ensuring we pass a valid local path
             model = YOLO(model_path)
             model.to(device)
             print(f"Loaded YOLO model from {model_path} on {device}")
             return model
         except Exception as e:
-            print(f"Failed to load YOLO model: {e}")
+            print(f"Failed to load YOLO model from {model_path}: {e}")
             return None
 
     def load_onnx_session(self, model_path: str, providers: list = None) -> Optional[ort.InferenceSession]:
         """Load ONNX model with ONNX Runtime for optimized CPU inference."""
         if providers is None:
             providers = ["CPUExecutionProvider"]
+
+        # Verify file exists locally
+        if not Path(model_path).exists():
+            print(f"ONNX model file not found locally: {model_path}")
+            return None
 
         try:
             session = ort.InferenceSession(model_path, providers=providers)
@@ -85,6 +98,7 @@ class ModelLoader:
     ) -> Optional[Any]:
         """
         Get cached model or load it lazily.
+        STRICTLY LOCAL - no network downloads.
 
         Args:
             module: Module name ('detection', 'radiology')
@@ -102,7 +116,7 @@ class ModelLoader:
 
         model_path = self.get_model_path(module, model_name, quantized=prefer_onnx)
         if not model_path:
-            print(f"No model found for {module}/{model_name}")
+            print(f"No LOCAL model found for {module}/{model_name}. Expected at: {self.models_dir / module / f'{model_name}_yolov8n.pt'}")
             return None
 
         if prefer_onnx and model_path.suffix == ".onnx":
@@ -157,6 +171,7 @@ def get_model_loader(models_dir: str = "models") -> ModelLoader:
 def load_model_for_module(module: str, submodule: str, device: str = "cpu") -> Optional[Any]:
     """
     Convenience function to load model for a specific module/submodule.
+    LOCAL FILES ONLY - no network access.
 
     Args:
         module: 'detection', 'radiology', 'chatbot'

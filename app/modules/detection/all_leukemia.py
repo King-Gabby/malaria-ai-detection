@@ -197,6 +197,11 @@ class ALLDetector:
 
 @st.cache_resource
 def load_all_model(weights_path: str, device: str = "cpu") -> ALLDetector | None:
+    """Cached model loader for Streamlit - LOCAL FILES ONLY."""
+    if not Path(weights_path).exists():
+        print(f"ALL model weights not found locally: {weights_path}")
+        return None
+    
     try:
         return ALLDetector(weights_path, device)
     except Exception as e:

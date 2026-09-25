@@ -194,7 +194,11 @@ class CTScanDetector:
 
 @st.cache_resource
 def load_ct_model(weights_path: str, device: str = "cpu") -> CTScanDetector | None:
-    """Cached model loader for Streamlit."""
+    """Cached model loader for Streamlit - LOCAL FILES ONLY."""
+    if not Path(weights_path).exists():
+        print(f"CT model weights not found locally: {weights_path}")
+        return None
+    
     try:
         return CTScanDetector(weights_path, device)
     except Exception as e:
